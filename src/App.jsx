@@ -20,29 +20,34 @@ import { supabase } from "./supabase";
  */
 
 export default function App() {
+useEffect(() => {
+  // If Supabase sends back a PKCE code, exchange it for a session
+  const hasCode = window.location.search.includes("code=");
+  if (!hasCode) return;
+
+  supabase.auth.exchangeCodeForSession(window.location.href).then(({ error }) => {
+    if (error) console.error("exchangeCodeForSession error:", error.message);
+    // clean the URL so refresh doesn't re-run exchange
+    window.history.replaceState({}, "", window.location.pathname);
+  });
+}, []);
+
   // ----------------------------
   // AUTH
   // =====================================================
   const [user, setUser] = useState(null);
 
-  useEffect(() => {
+useEffect(() => {
   let mounted = true;
 
-  async function loadSession() {
-    const { data } = await supabase.auth.getSession();
-
+  supabase.auth.getSession().then(({ data }) => {
     if (!mounted) return;
-
     setUser(data.session?.user ?? null);
-  }
+  });
 
-  loadSession();
-
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      setUser(session?.user ?? null);
-    }
-  );
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user ?? null);
+  });
 
   return () => {
     mounted = false;
