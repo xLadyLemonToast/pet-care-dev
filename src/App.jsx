@@ -1758,6 +1758,8 @@ const { data, error } = await supabase
           )}
         </div>
       </div>
+      
+  const loginMagicLink = loginWithMagicLink;
 
       {/* Login Modal */}
       {loginOpen && (
