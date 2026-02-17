@@ -37,46 +37,57 @@ useEffect(() => {
   let alive = true;
 
   async function bootAuth() {
-    try {
-      // If magic link / PKCE returned a code, exchange it for a session
-      if (window.location.search.includes("code=")) {
-        const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(
-          window.location.href
-        );
-        if (exchangeErr) console.error("exchangeCodeForSession:", exchangeErr.message);
+    // If magic link / PKCE returned code, exchange it
+    if (window.location.search.includes("code=")) {
+      const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+      if (error) console.error("exchangeCodeForSession:", error.message);
 
-        // Clean URL so refresh doesn't retry exchange
-        window.history.replaceState(
-          {},
-          "",
-          window.location.pathname + window.location.hash
-        );
-      }
-
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) console.error("getSession:", sessionErr.message);
-
-      if (!alive) return;
-      setUser(sessionData?.session?.user ?? null);
-    } catch (e) {
-      console.error("bootAuth crash:", e);
+      // Clean URL so refresh doesn't retry exchange
+      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
     }
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) console.error("getSession:", error.message);
+    if (!alive) return;
+    setUser(data?.session?.user ?? null);
   }
 
   bootAuth();
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => {
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
     if (!alive) return;
     setUser(session?.user ?? null);
   });
 
   return () => {
     alive = false;
-    subscription.unsubscribe();
+    sub.subscription.unsubscribe();
   };
 }, []);
+
+async function loginWithMagicLink() {
+  const email = loginEmail.trim().toLowerCase();
+  if (!email) return setLoginMsg("Enter your admin email.");
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  const redirectTo = window.location.origin;
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: redirectTo },
+  });
+
+  setLoginBusy(false);
+  if (error) setLoginMsg(error.message);
+  else setLoginMsg("Magic link sent. Check your email ✨");
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+  setLoginOpen(false);
+  setLoginMsg("");
+}
 
   // ----------------------------
   // APP STATE
