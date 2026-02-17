@@ -88,6 +88,17 @@ async function logout() {
   setLoginOpen(false);
   setLoginMsg("");
 }
+<button
+  onClick={async () => {
+    console.log("ENV URL:", import.meta.env.VITE_SUPABASE_URL);
+    console.log("ENV KEY exists:", !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+    const { data } = await supabase.auth.getSession();
+    alert(data.session ? `SESSION ✅ ${data.session.user.email}` : "SESSION ❌ null");
+  }}
+>
+  Session Check
+</button>
   // ----------------------------
   // APP STATE
   // ----------------------------
