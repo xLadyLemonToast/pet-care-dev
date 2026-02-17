@@ -16,9 +16,10 @@ import { supabase } from "./supabase";
 
 export default function App() {
   // ----------------------------
-  // AUTH (CLEAN + WORKING)
+  // AUTH (CLEAN + WORKING - updated)
   // ----------------------------
   const [user, setUser] = useState(null);
+  
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -101,7 +102,6 @@ export default function App() {
     subscription.unsubscribe();
   };
 }, []);
-
 
   // ----------------------------
   // APP STATE
