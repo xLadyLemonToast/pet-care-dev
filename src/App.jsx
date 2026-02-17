@@ -192,7 +192,56 @@ const [tagInput, setTagInput] = useState("");
 
   // Image URL cache (signed URLs can expire; cache per breed render)
   const [imageSrcCache, setImageSrcCache] = useState({}); // { rawUrl: resolvedUrl }
+// ----------------------------
+// TAG HELPERS (NEW)
+// ----------------------------
+const normalizeTag = (tag) =>
+  (tag ?? "").trim().toLowerCase().replace(/\s+/g, "-");
 
+function addTag() {
+  const cleaned = normalizeTag(tagInput);
+  if (!cleaned) return;
+  if (breedTags.includes(cleaned)) return;
+
+  setBreedTags([...breedTags, cleaned]);
+  setTagInput("");
+}
+
+function removeTag(tagToRemove) {
+  setBreedTags(breedTags.filter((t) => t !== tagToRemove));
+}
+
+function handleTagKeyDown(e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    addTag();
+  }
+  if (e.key === "Backspace" && !tagInput && breedTags.length > 0) {
+    // optional: backspace removes last tag when input is empty
+    removeTag(breedTags[breedTags.length - 1]);
+  }
+}
+// --------------------------------
+// SAVE TAGS WHEN BREED IS SAVED
+// --------------------------------
+async function saveBreedTags(breedId, tags) {
+  const cleaned = Array.from(
+    new Set((tags ?? []).map(normalizeTag).filter(Boolean))
+  );
+
+  const { error: delErr } = await supabase
+    .from("breed_tags")
+    .delete()
+    .eq("breed_id", breedId);
+
+  if (delErr) throw delErr;
+
+  if (cleaned.length === 0) return;
+
+  const rows = cleaned.map((tag) => ({ breed_id: breedId, tag }));
+  const { error: insErr } = await supabase.from("breed_tags").insert(rows);
+  if (insErr) throw insErr;
+}
   // Tiny toast
   const [toastText, setToastText] = useState("");
   const toastTimerRef = useRef(null);
@@ -317,16 +366,28 @@ const [tagInput, setTagInput] = useState("");
   async function loadBreeds(typeId) {
     const { data, error } = await supabase
       .from("breeds")
-      .select("id,name,image_url,pet_type_id")
+      .select(`
+        id,name,image_url,pet_type_id,
+        breed_tags(tag)
+      `)
       .eq("pet_type_id", typeId)
       .order("name");
+
     if (error) console.error(error);
     setBreeds(data ?? []);
     setImageSrcCache({});
   }
 
   async function loadBreedDetails(id) {
-    const { data, error } = await supabase.from("breeds").select("*").eq("id", id).single();
+    const { data, error } = await supabase
+      .from("breeds")
+      .select(`
+        *,
+        breed_tags(tag)
+      `)
+      .eq("id", id)
+      .single();
+
     if (error) console.error(error);
     setSelectedBreed(data ?? null);
   }
@@ -598,6 +659,8 @@ const [tagInput, setTagInput] = useState("");
       group: "",
       origin: "",
     });
+    setBreedTags([]);
+    setTagInput("");
     setBreedSaveMsg("");
   }
 
@@ -650,7 +713,15 @@ const [tagInput, setTagInput] = useState("");
       setBreedSaveMsg(error.message);
       return;
     }
-
+  // ✅ Save tags AFTER breed is confirmed saved
+  try {
+    if (data?.id) {
+      await saveBreedTags(data.id, breedTags);
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Breed saved but tags failed ⚠️");
+  }
     setBreedSaveMsg("Saved ✅");
     toast("Breed saved ✅");
 
@@ -1094,7 +1165,116 @@ const [tagInput, setTagInput] = useState("");
                       + New Breed
                     </button>
                   </div>
+{/* TAGS (NEW) */}
+<div style={{ marginTop: 12 }}>
+  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginBottom: 6 }}>
+    Tags
+  </div>
 
+  <div
+    style={{
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
+      padding: 10,
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(255,255,255,0.04)",
+    }}
+  >
+    {breedTags.map((t) => (
+      <span
+        key={t}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.14)",
+          background: "rgba(0,0,0,0.25)",
+          fontSize: 12,
+        }}
+      >
+        <span>{t}</span>
+        <button
+          type="button"
+          onClick={() => removeTag(t)}
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "transparent",
+            color: "rgba(255,255,255,0.8)",
+            cursor: "pointer",
+            lineHeight: "16px",
+            padding: 0,
+          }}
+          aria-label={`Remove tag ${t}`}
+          title="Remove"
+        >
+          ×
+        </button>
+      </span>
+    ))}
+
+    <input
+      value={tagInput}
+      onChange={(e) => setTagInput(e.target.value)}
+      onKeyDown={handleTagKeyDown}
+      placeholder="Type a tag and press Enter…"
+      style={{
+        flex: 1,
+        minWidth: 220,
+        border: "none",
+        outline: "none",
+        background: "transparent",
+        color: "white",
+        fontSize: 13,
+        padding: "6px 8px",
+      }}
+    />
+
+    <button
+      type="button"
+      onClick={addTag}
+      style={{
+        borderRadius: 10,
+        padding: "8px 10px",
+        border: "1px solid rgba(255,255,255,0.18)",
+        background: "rgba(255,255,255,0.06)",
+        color: "white",
+        cursor: "pointer",
+        fontSize: 12,
+      }}
+    >
+      Add
+    </button>
+
+    {breedTags.length > 0 && (
+      <button
+        type="button"
+        onClick={() => setBreedTags([])}
+        style={{
+          borderRadius: 10,
+          padding: "8px 10px",
+          border: "1px solid rgba(255,255,255,0.18)",
+          background: "transparent",
+          color: "rgba(255,255,255,0.75)",
+          cursor: "pointer",
+          fontSize: 12,
+        }}
+      >
+        Clear
+      </button>
+    )}
+  </div>
+
+  <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+    Tip: use lowercase + hyphens (example: <code style={{ color: "rgba(255,255,255,0.8)" }}>kid-friendly</code>)
+  </div>
+</div>
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div style={{ gridColumn: "span 2" }}>
                       <div style={ui.label()}>Pet Type</div>
