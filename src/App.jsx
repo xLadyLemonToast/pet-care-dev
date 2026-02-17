@@ -14,78 +14,103 @@ import { supabase } from "./supabase";
  *    - Redirect URLs: https://pet-care-dev.vercel.app/**  AND  http://localhost:5173/**
  */
 
-// ----------------------------
-// AUTH (CLEAN + WORKING)
-// ----------------------------
-const ADMIN_EMAILS = useMemo(
-  () => new Set(["i-peters@outlook.com"].map((x) => x.toLowerCase().trim())),
-  []
-);
+export default function App() {
+  // ----------------------------
+  // AUTH (CLEAN + WORKING)
+  // ----------------------------
+  const [user, setUser] = useState(null);
 
-const [user, setUser] = useState(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginMsg, setLoginMsg] = useState("");
 
-const [loginOpen, setLoginOpen] = useState(false);
-const [loginEmail, setLoginEmail] = useState("");
-const [loginBusy, setLoginBusy] = useState(false);
-const [loginMsg, setLoginMsg] = useState("");
+  // ✅ Put YOUR email(s) here
+  const ADMIN_EMAILS = useMemo(
+    () =>
+      new Set(
+        [
+          "i-peters@outlook.com",
+          // "another.admin@email.com",
+        ].map((x) => x.toLowerCase().trim())
+      ),
+    []
+  );
 
-const isAdmin = !!user && ADMIN_EMAILS.has((user.email || "").toLowerCase());
+  const isAdmin = !!user && ADMIN_EMAILS.has((user.email || "").toLowerCase());
 
-useEffect(() => {
+  async function logout() {
+    await supabase.auth.signOut();
+    setLoginOpen(false);
+    setLoginMsg("");
+  }
+
+  async function loginWithMagicLink() {
+    const email = loginEmail.trim().toLowerCase();
+    if (!email) return setLoginMsg("Enter your admin email.");
+    setLoginBusy(true);
+    setLoginMsg("");
+
+    // Force redirect back to THIS site (Vercel in prod, localhost in dev)
+    const redirectTo = window.location.origin;
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: redirectTo },
+    });
+
+    setLoginBusy(false);
+    if (error) setLoginMsg(error.message);
+    else setLoginMsg("Magic link sent. Check your email ✨");
+  }
+
+  useEffect(() => {
   let alive = true;
 
   async function bootAuth() {
-    // If magic link / PKCE returned code, exchange it
-    if (window.location.search.includes("code=")) {
-      const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
-      if (error) console.error("exchangeCodeForSession:", error.message);
+    try {
+      // If magic link / PKCE returned a code, exchange it for a session
+      if (window.location.search.includes("code=")) {
+        const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(
+          window.location.href
+        );
+        if (exchangeErr) console.error("exchangeCodeForSession:", exchangeErr.message);
 
-      // Clean URL so refresh doesn't retry exchange
-      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        // Clean URL so refresh doesn't retry exchange
+        window.history.replaceState(
+          {},
+          "",
+          window.location.pathname + window.location.hash
+        );
+      }
+
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) console.error("getSession:", sessionErr.message);
+
+      if (!alive) return;
+      setUser(sessionData?.session?.user ?? null);
+    } catch (e) {
+      console.error("bootAuth crash:", e);
     }
-
-    const { data, error } = await supabase.auth.getSession();
-    if (error) console.error("getSession:", error.message);
-    if (!alive) return;
-    setUser(data?.session?.user ?? null);
   }
 
   bootAuth();
 
-  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
     if (!alive) return;
     setUser(session?.user ?? null);
   });
 
   return () => {
     alive = false;
-    sub.subscription.unsubscribe();
+    subscription.unsubscribe();
   };
 }, []);
 
-async function loginWithMagicLink() {
-  const email = loginEmail.trim().toLowerCase();
-  if (!email) return setLoginMsg("Enter your admin email.");
-  setLoginBusy(true);
-  setLoginMsg("");
 
-  const redirectTo = window.location.origin;
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: redirectTo },
-  });
-
-  setLoginBusy(false);
-  if (error) setLoginMsg(error.message);
-  else setLoginMsg("Magic link sent. Check your email ✨");
-}
-
-async function logout() {
-  await supabase.auth.signOut();
-  setLoginOpen(false);
-  setLoginMsg("");
-}
   // ----------------------------
   // APP STATE
   // ----------------------------
@@ -101,7 +126,6 @@ async function logout() {
   const [openCategoryIds, setOpenCategoryIds] = useState(new Set());
 
   // UX
-  const [activeTags, setActiveTags] = useState([]);
   const [breedSearch, setBreedSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -520,6 +544,7 @@ async function saveBreedTags(breedId, tags) {
     };
     return (name) => tones[name] ?? { tint: "rgba(255,255,255,.06)", border: "rgba(255,255,255,.14)" };
   }, []);
+  const [activeTags, setActiveTags] = useState([]);
 
   // ----------------------------
   // FAVORITES + GRID
@@ -1760,6 +1785,7 @@ const { data, error } = await supabase
       )}
     </div>
   );
+}
 
 /* ----------------------------
    UI FACTORY
