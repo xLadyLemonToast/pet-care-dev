@@ -19,7 +19,6 @@ export default function App() {
   // AUTH (CLEAN + WORKING)
   // ----------------------------
   const [user, setUser] = useState(null);
-
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -119,6 +118,7 @@ export default function App() {
   const [openCategoryIds, setOpenCategoryIds] = useState(new Set());
 
   // UX
+  const [activeTags, setActiveTags] = useState([]);
   const [breedSearch, setBreedSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -170,12 +170,14 @@ export default function App() {
     description: "",
     image_url: "",
     lifespan: "",
-    size: "",
+    breedTags: "",
     height_weight: "",
     group: "",
     origin: "",
   });
+  
   // NEW: tags for the selected breed
+  
 const [breedTags, setBreedTags] = useState([]); // array of strings, e.g. ["kid-friendly", "low-shedding"]
 const [tagInput, setTagInput] = useState("");
 
@@ -539,22 +541,37 @@ async function saveBreedTags(breedId, tags) {
   // ----------------------------
   // FAVORITES + GRID
   // ----------------------------
-  const filteredBreeds = useMemo(() => {
+  const searchFilteredBreeds = useMemo(() => {
     const q = breedSearch.trim().toLowerCase();
     if (!q) return breeds;
-    return breeds.filter((b) => (b.name ?? "").toLowerCase().includes(q));
+
+    return breeds.filter(b =>
+      (b.name ?? "").toLowerCase().includes(q)
+    );
   }, [breeds, breedSearch]);
 
-  const sortedBreeds = useMemo(() => {
-    const arr = [...filteredBreeds];
-    arr.sort((a, b) => {
-      const af = favorites.has(a.id) ? 0 : 1;
-      const bf = favorites.has(b.id) ? 0 : 1;
-      if (af !== bf) return af - bf;
-      return (a.name ?? "").localeCompare(b.name ?? "");
-    });
-    return arr;
-  }, [filteredBreeds, favorites]);
+const tagFilteredBreeds = useMemo(() => {
+  if (!activeTags.length) return searchFilteredBreeds;
+
+  return searchFilteredBreeds.filter(b =>
+    activeTags.every(tag =>
+    (b.breed_tags ?? []).some((t) => t.tag === tag)    )
+  );
+}, [searchFilteredBreeds, activeTags]);
+
+const sortedBreeds = useMemo(() => {
+  const arr = [...tagFilteredBreeds];
+
+  arr.sort((a, b) => {
+    const af = favorites.has(a.id) ? 0 : 1;
+    const bf = favorites.has(b.id) ? 0 : 1;
+    if (af !== bf) return af - bf;
+
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
+
+  return arr;
+}, [tagFilteredBreeds, favorites]);
 
   function toggleFavorite(id) {
     setFavorites((prev) => {
@@ -566,6 +583,13 @@ async function saveBreedTags(breedId, tags) {
 
   const isFavorite = selectedBreed ? favorites.has(selectedBreed.id) : false;
 
+  function toggleTagFilter(tag) {
+    setActiveTags(prev =>
+      prev.includes(tag)
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
+  }
   // ----------------------------
   // COLLAPSE
   // ----------------------------
@@ -664,24 +688,26 @@ async function saveBreedTags(breedId, tags) {
     setBreedSaveMsg("");
   }
 
-  function loadBreedIntoForm(b) {
-    setBreedForm({
-      id: b.id ?? "",
-      pet_type_id: b.pet_type_id ?? "",
-      name: b.name ?? "",
-      description: b.description ?? "",
-      image_url: b.image_url ?? "",
-      lifespan: b.lifespan ?? "",
-      size: b.size ?? "",
-      height_weight: b.height_weight ?? "",
-      group: b.group ?? "",
-      origin: b.origin ?? "",
-    });
+function loadBreedIntoForm(b) {
+  setBreedForm({
+    id: b.id ?? "",
+    pet_type_id: b.pet_type_id ?? "",
+    name: b.name ?? "",
+    description: b.description ?? "",
+    image_url: b.image_url ?? "",
+    lifespan: b.lifespan ?? "",
+    size: b.size ?? "",
+    height_weight: b.height_weight ?? "",
+    group: b.group ?? "",
+    origin: b.origin ?? "",
+  });
 
-    //Load tags into form (NEW)
-     // assuming b.tags is an array of strings
-    setBreedSaveMsg("");
-  }
+  // ✅ Load tags into form (NEW)
+  setBreedTags((b.breed_tags ?? []).map((t) => t.tag));
+  setTagInput("");
+
+  setBreedSaveMsg("");
+}
 
   async function saveBreed() {
     if (!isAdmin) return alert("Log in as admin first.");
@@ -704,8 +730,11 @@ async function saveBreedTags(breedId, tags) {
       height_weight: breedForm.height_weight?.trim() || null,
     };
 
-    const { data, error } = await supabase.from("breeds").upsert(payload).select("*").single();
-
+const { data, error } = await supabase
+  .from("breeds")
+  .upsert(payload)
+  .select(`*, breed_tags(tag)`)
+  .single();
     setBreedSaving(false);
 
     if (error) {
@@ -909,6 +938,14 @@ async function saveBreedTags(breedId, tags) {
       })),
     [sortedBreeds, favorites]
   );
+
+  function toggleTagFilter(tag) {
+  setActiveTags(prev =>
+    prev.includes(tag)
+      ? prev.filter(t => t !== tag)
+      : [...prev, tag]
+  );
+}
 
   const selectedImageSrc = selectedBreed?.image_url ? imageSrcCache[selectedBreed.image_url] : "";
 
@@ -1545,7 +1582,14 @@ async function saveBreedTags(breedId, tags) {
                       <Chip>🌍 <b>Origin:</b> {selectedBreed.origin}</Chip>
                     )}
                   </div>
-
+                    {selectedBreed?.breed_tags?.length > 0 && (
+                      <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {selectedBreed.breed_tags.map((t) => (
+                          <Chip key={t.tag}>🏷️ {t.tag}</Chip>
+                        ))}
+                      </div>
+                      
+                    )}
                   <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button onClick={openAllCategories} style={ui.btn()}>
                       Expand all
