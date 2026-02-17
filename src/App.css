@@ -1,95 +1,110 @@
-#root {
-  max-width: 1400px;
-  margin: auto;
-  padding: 40px 28px;
+#root{
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px;
 }
 
-/* ---------- ELITE GLASS CARD ---------- */
-
-.glass-card {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-
-  padding: 26px;
-
-  box-shadow:
-    0 10px 30px rgba(0,0,0,0.35),
-    inset 0 1px 0 rgba(255,255,255,0.03);
-
-  backdrop-filter: blur(6px);
-
-  transition: all .25s ease;
+/* ---------- APP SHELL ---------- */
+.lux-app{
+  isolation: isolate;
 }
 
-.glass-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--gold-soft);
+/* Cursor glow overlay */
+.lux-glow{
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(520px 520px at var(--lux-x) var(--lux-y), rgba(214,179,106,.12) 0%, transparent 60%),
+    radial-gradient(760px 520px at calc(var(--lux-x) + 220px) calc(var(--lux-y) + 160px), rgba(255,255,255,.05) 0%, transparent 70%);
+  mix-blend-mode: screen;
+  opacity: .9;
 }
 
-/* ---------- LUXURY BUTTON ---------- */
-
-button {
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-
-  background: linear-gradient(
-    180deg,
-    #1c1f26,
-    #13151a
-  );
-
-  padding: 10px 18px;
-
-  color: var(--text-primary);
-  font-weight: 500;
-  letter-spacing: .02em;
-
-  transition: all .2s ease;
-}
-
-button:hover {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 1px var(--gold-soft);
-  transform: translateY(-1px);
-}
-
-button:active {
-  transform: translateY(1px);
-}
-
-/* ---------- INPUTS ---------- */
-
-input, select {
-  background: #121419;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-
-  padding: 10px 14px;
-  color: var(--text-primary);
-
-  transition: .2s;
-}
-
-input:focus, select:focus {
-  outline: none;
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(214,179,106,.15);
-}
-
-/* ---------- STICKY TOP BAR (use this class in App.jsx) ---------- */
-
-.top-bar {
+/* Sticky top bar */
+.lux-topbar{
   position: sticky;
   top: 18px;
-  z-index: 999;
+  z-index: 20;
 
-  background: rgba(20,22,27,.75);
-  backdrop-filter: blur(10px);
+  padding: 14px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(18,20,28,.55);
+  backdrop-filter: blur(14px);
 
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  box-shadow:
+    0 18px 60px rgba(0,0,0,.35),
+    inset 0 1px 0 rgba(255,255,255,.04);
+}
 
+/* ---------- LUX CARDS ---------- */
+.lux-card{
+  border-radius: 16px;
   padding: 14px;
-  margin-bottom: 28px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(18,20,28,.46);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 18px 60px rgba(0,0,0,.28),
+    inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.lux-card:hover{
+  transform: translateY(-2px);
+  border-color: rgba(214,179,106,.24);
+  box-shadow:
+    0 26px 80px rgba(0,0,0,.32),
+    0 0 0 1px rgba(214,179,106,.12),
+    inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.lux-card__inner{
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+  padding: 12px;
+}
+
+/* Chips */
+.lux-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+}
+
+/* Segment control */
+.lux-segment{
+  display:inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 36px rgba(0,0,0,.22);
+}
+
+/* Buttons (global fallback for any unstyled buttons) */
+button{
+  font-family: inherit;
+  letter-spacing: .02em;
+}
+
+button:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(214,179,106,.18);
+}
+
+/* Inputs */
+input::placeholder{
+  color: rgba(255,255,255,.45);
 }

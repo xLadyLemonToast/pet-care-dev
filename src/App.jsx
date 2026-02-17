@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import "./App.css";
 
 /**
  * CLEAN WORKING APP.JSX
@@ -69,30 +70,24 @@ export default function App() {
 
   async function bootAuth() {
     try {
-      // If magic link / PKCE returned a code, exchange it for a session
-      if (window.location.search.includes("code=")) {
-        const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(
-          window.location.href
-        );
-        if (exchangeErr) console.error("exchangeCodeForSession:", exchangeErr.message);
+      // If Supabase returns a PKCE code, exchange it for a session
+      const hasCode = window.location.search.includes("code=");
+      if (hasCode) {
+        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+        if (error) console.error("exchangeCodeForSession:", error.message);
 
-        // Clean URL so refresh doesn't retry exchange
-        window.history.replaceState(
-          {},
-          "",
-          window.location.pathname + window.location.hash
-        );
+        // Clean URL so refresh doesn't repeat exchange
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
       }
 
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) console.error("getSession:", sessionErr.message);
-
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.error("getSession:", error.message);
       if (!alive) return;
-      setUser(sessionData?.session?.user ?? null);
+      setUser(data?.session?.user ?? null);
     } catch (e) {
       console.error("bootAuth crash:", e);
     }
-  }
+  } // ✅ CLOSE bootAuth properly
 
   bootAuth();
 
@@ -110,7 +105,6 @@ export default function App() {
 }, []);
 
 
-
   // ----------------------------
   // APP STATE
   // ----------------------------
@@ -126,6 +120,7 @@ export default function App() {
   const [openCategoryIds, setOpenCategoryIds] = useState(new Set());
 
   // UX
+  const [activeTags, setActiveTags] = useState([]);
   const [breedSearch, setBreedSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -485,35 +480,40 @@ async function saveBreedTags(breedId, tags) {
   // THEME (glass + calm color)
   // ----------------------------
   const theme = useMemo(() => {
+    // Luxury: deep ink + warm gold accent
     if (!darkMode) {
       return {
         mode: "light",
-        bg0: "#f6f7fb",
+        bg0: "#f6f5f1",
         bg1: "#ffffff",
-        text: "#0b1220",
-        subtext: "rgba(11,18,32,.70)",
-        border: "rgba(11,18,32,.12)",
-        glass: "rgba(255,255,255,.65)",
-        glass2: "rgba(255,255,255,.45)",
-        shadow: "0 18px 60px rgba(12,18,38,.10)",
-        shadow2: "0 10px 30px rgba(12,18,38,.10)",
-        ring: "rgba(122,162,255,.50)",
-        chip: "rgba(255,255,255,.65)",
+        text: "#0b0c10",
+        subtext: "rgba(11,12,16,.70)",
+        border: "rgba(11,12,16,.12)",
+        glass: "rgba(255,255,255,.72)",
+        glass2: "rgba(255,255,255,.50)",
+        shadow: "0 24px 70px rgba(15,18,30,.10)",
+        shadow2: "0 10px 26px rgba(15,18,30,.10)",
+        ring: "rgba(214,179,106,.45)",
+        chip: "rgba(255,255,255,.70)",
+        accent: "#d6b36a",
+        accentSoft: "rgba(214,179,106,.20)",
       };
     }
     return {
       mode: "dark",
-      bg0: "#070A12",
-      bg1: "#0B1020",
+      bg0: "#0b0c10",
+      bg1: "#0f1118",
       text: "rgba(255,255,255,.92)",
-      subtext: "rgba(255,255,255,.68)",
-      border: "rgba(255,255,255,.12)",
-      glass: "rgba(16,22,44,.55)",
-      glass2: "rgba(16,22,44,.35)",
-      shadow: "0 22px 70px rgba(0,0,0,.45)",
-      shadow2: "0 12px 34px rgba(0,0,0,.35)",
-      ring: "rgba(130,170,255,.45)",
+      subtext: "rgba(255,255,255,.62)",
+      border: "rgba(255,255,255,.10)",
+      glass: "rgba(18,20,28,.58)",
+      glass2: "rgba(18,20,28,.38)",
+      shadow: "0 28px 84px rgba(0,0,0,.55)",
+      shadow2: "0 12px 34px rgba(0,0,0,.40)",
+      ring: "rgba(214,179,106,.35)",
       chip: "rgba(255,255,255,.08)",
+      accent: "#d6b36a",
+      accentSoft: "rgba(214,179,106,.18)",
     };
   }, [darkMode]);
 
@@ -544,7 +544,6 @@ async function saveBreedTags(breedId, tags) {
     };
     return (name) => tones[name] ?? { tint: "rgba(255,255,255,.06)", border: "rgba(255,255,255,.14)" };
   }, []);
-  const [activeTags, setActiveTags] = useState([]);
 
   // ----------------------------
   // FAVORITES + GRID
@@ -934,6 +933,18 @@ const { data, error } = await supabase
   // ----------------------------
   const ui = useMemo(() => createUi(theme), [theme]);
 
+  // Luxury pointer glow (tracks cursor)
+  useEffect(() => {
+    function onMove(e) {
+      const x = e.clientX;
+      const y = e.clientY;
+      document.documentElement.style.setProperty("--lux-x", `${x}px`);
+      document.documentElement.style.setProperty("--lux-y", `${y}px`);
+    }
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => window.removeEventListener("mousemove", onMove);
+  }, []);
+
   // Custom combobox items
   const petTypeItems = useMemo(() => petTypes.map((pt) => ({ value: pt.id, label: pt.name })), [petTypes]);
 
@@ -962,6 +973,7 @@ const { data, error } = await supabase
   // ----------------------------
   return (
     <div
+      className="lux-app"
       style={{
         minHeight: "100vh",
         color: theme.text,
@@ -998,6 +1010,10 @@ const { data, error } = await supabase
         }}
       />
 
+      {/* Cursor glow */}
+      <div aria-hidden="true" className="lux-glow" />
+
+
       {/* Toast */}
       <div
         style={{
@@ -1013,14 +1029,14 @@ const { data, error } = await supabase
       >
         <div
           style={{
-            padding: "10px 14px",
-            borderRadius: 999,
+            padding: "9px 12px",
+            borderRadius: 12,
             background: theme.glass,
             border: `1px solid ${theme.border}`,
             backdropFilter: "blur(14px)",
             boxShadow: theme.shadow2,
             color: theme.text,
-            fontWeight: 800,
+            fontWeight: 650,
             fontSize: 13,
           }}
         >
@@ -1032,10 +1048,10 @@ const { data, error } = await supabase
       <div style={{ position: "relative", zIndex: 1, padding: 34 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* HEADER */}
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+          <div className="lux-topbar" style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
             <div>
               <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-                <h1 style={{ margin: 0, fontSize: 48, letterSpacing: -0.9, lineHeight: 1.02 }}>Zoo Database</h1>
+                <h1 style={{ margin: 0, fontSize: 38, letterSpacing: -0.6, lineHeight: 1.02 }}>Zoo Database</h1>
                 <div style={{ fontSize: 18, opacity: 0.9 }}>🐾</div>
               </div>
               <div style={{ marginTop: 8, color: theme.subtext, fontSize: 14 }}>
@@ -1235,7 +1251,7 @@ const { data, error } = await supabase
           alignItems: "center",
           gap: 8,
           padding: "6px 10px",
-          borderRadius: 999,
+          borderRadius: 12,
           border: "1px solid rgba(255,255,255,0.14)",
           background: "rgba(0,0,0,0.25)",
           fontSize: 12,
@@ -1248,7 +1264,7 @@ const { data, error } = await supabase
           style={{
             width: 18,
             height: 18,
-            borderRadius: 999,
+            borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.18)",
             background: "transparent",
             color: "rgba(255,255,255,0.8)",
@@ -1792,14 +1808,14 @@ const { data, error } = await supabase
 ---------------------------- */
 function createUi(theme) {
   const baseBtn = {
-    borderRadius: 999,
-    padding: "10px 14px",
+    borderRadius: 12,
+    padding: "9px 12px",
     border: `1px solid ${theme.border}`,
     background: theme.glass,
     color: theme.text,
     cursor: "pointer",
-    fontWeight: 800,
-    letterSpacing: -0.1,
+    fontWeight: 650,
+    letterSpacing: 0.2,
     boxShadow: theme.shadow2,
     backdropFilter: "blur(14px)",
     transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease",
@@ -1821,13 +1837,13 @@ function createUi(theme) {
         opacity: disabled ? 0.65 : 1,
         cursor: disabled ? "not-allowed" : "pointer",
         padding: icon ? "10px 12px" : baseBtn.padding,
-        borderColor: glow ? "rgba(130,170,255,.45)" : toneBorder(tone),
-        boxShadow: glow ? "0 16px 40px rgba(122,162,255,.18)" : theme.shadow2,
+        borderColor: glow ? theme.accentSoft : toneBorder(tone),
+        boxShadow: glow ? `0 16px 44px ${theme.accentSoft}` : theme.shadow2,
       };
     },
     iconBtn: () => ({
       ...baseBtn,
-      padding: "9px 11px",
+      padding: "8px 10px",
       fontSize: 13,
       display: "inline-flex",
       alignItems: "center",
@@ -1838,8 +1854,8 @@ function createUi(theme) {
     }),
     input: (extra = {}) => ({
       width: "100%",
-      padding: "12px 12px",
-      borderRadius: 14,
+      padding: "10px 12px",
+      borderRadius: 12,
       border: `1px solid ${theme.border}`,
       background: theme.glass2,
       color: theme.text,
@@ -1851,8 +1867,8 @@ function createUi(theme) {
     }),
     textarea: (extra = {}) => ({
       width: "100%",
-      padding: "12px 12px",
-      borderRadius: 14,
+      padding: "10px 12px",
+      borderRadius: 12,
       border: `1px solid ${theme.border}`,
       background: theme.glass2,
       color: theme.text,
@@ -1877,14 +1893,14 @@ function createUi(theme) {
       alignItems: "center",
       gap: 10,
       padding: "10px 12px",
-      borderRadius: 14,
+      borderRadius: 12,
       border: `1px solid ${theme.border}`,
       background: theme.glass2,
       backdropFilter: "blur(12px)",
     }),
     dropzone: () => ({
       border: `1px dashed ${theme.border}`,
-      borderRadius: 14,
+      borderRadius: 12,
       padding: "10px 12px",
       color: theme.subtext,
       background: theme.glass2,
@@ -1898,7 +1914,7 @@ function createUi(theme) {
     }),
     badge: (tone) => ({
       padding: "6px 10px",
-      borderRadius: 999,
+      borderRadius: 12,
       border: `1px solid ${tone === "good" ? "rgba(120,255,196,.35)" : tone === "bad" ? "rgba(255,120,120,.35)" : theme.border}`,
       background: theme.glass2,
       fontWeight: 900,
@@ -1913,58 +1929,19 @@ function createUi(theme) {
 ---------------------------- */
 function GlassCard({ children }) {
   return (
-    <div
-      style={{
-        borderRadius: 20,
-        padding: 16,
-        border: `1px solid rgba(255,255,255,.10)`,
-        background: "rgba(255,255,255,.04)",
-        boxShadow: "0 18px 60px rgba(0,0,0,.18)",
-        backdropFilter: "blur(16px)",
-      }}
-    >
-      <div style={{ borderRadius: 16, border: `1px solid rgba(255,255,255,.10)`, background: "rgba(255,255,255,.02)", padding: 14 }}>
-        {children}
-      </div>
+    <div className="lux-card">
+      <div className="lux-card__inner">{children}</div>
     </div>
   );
 }
 
 function Chip({ children }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "9px 11px",
-        borderRadius: 999,
-        background: "rgba(255,255,255,.06)",
-        border: "1px solid rgba(255,255,255,.12)",
-        fontSize: 13,
-        boxShadow: "0 10px 26px rgba(0,0,0,.10)",
-        backdropFilter: "blur(12px)",
-      }}
-    >
-      {children}
-    </span>
-  );
+  return <span className="lux-chip">{children}</span>;
 }
 
 function Segment({ value, onChange, options, ui }) {
   return (
-    <div
-      style={{
-        display: "inline-flex",
-        padding: 6,
-        borderRadius: 999,
-        border: `1px solid rgba(255,255,255,.12)`,
-        background: "rgba(255,255,255,.05)",
-        backdropFilter: "blur(14px)",
-        boxShadow: "0 12px 32px rgba(0,0,0,.16)",
-        gap: 6,
-      }}
-    >
+    <div className="lux-segment">
       {options.map((o) => (
         <button
           key={o.value}
@@ -1977,7 +1954,7 @@ function Segment({ value, onChange, options, ui }) {
               disabled: !!o.disabled,
               glow: value === o.value,
             }),
-            padding: "9px 12px",
+            padding: "8px 10px",
             boxShadow: "none",
             background: value === o.value ? "rgba(122,162,255,.14)" : "rgba(255,255,255,.05)",
           }}
