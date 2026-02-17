@@ -2,81 +2,107 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 
 /**
- * ELITE UI (sleek glass + calmly colorful) ✅
- * Keeps your features:
- * - Supabase auth (magic link), admin-only edit/admin modes
- * - PetType/Breed browsing + share link params
- * - Favorites, grid + detail view
- * - Collapsible care cards + edit + autosave + Ctrl/Cmd+S save
- * - Breed editor CRUD + image upload (auto center-crop 16:9 + resize)
- * - Category editor CRUD
- * - Print/PDF + Brochure PDF export window
+ * CLEAN WORKING APP.JSX
+ * - Fixes: duplicate state declarations, stray initAuth calls, await errors, undefined helpers
+ * - Keeps: Supabase magic-link auth + admin-only mode, pet type/breed browsing, share links,
+ *          favorites, grid/detail/admin views, care cards + edit/autosave, breed CRUD + image upload
  *
- * Big visual upgrades:
- * - True glassmorphism UI with calm gradients + soft noise
- * - Custom combobox dropdowns (no ugly native <select>)
- * - Proper modal login (no browser prompt)
- * - Buttons/inputs: consistent, modern, tactile
+ * IMPORTANT:
+ * 1) Put your real admin email(s) in ADMIN_EMAILS below.
+ * 2) In Supabase Dashboard > Auth > URL Configuration:
+ *    - Site URL: https://pet-care-dev.vercel.app
+ *    - Redirect URLs: https://pet-care-dev.vercel.app/**  AND  http://localhost:5173/**
  */
 
 export default function App() {
   // ----------------------------
-  // AUTH
-  // =====================================================
-const [user, setUser] = useState(null);
+  // AUTH (CLEAN + WORKING)
+  // ----------------------------
+  const [user, setUser] = useState(null);
 
-useEffect(() => {
-
-  // get existing session
-  supabase.auth.getSession().then(({ data }) => {
-    setUser(data.session?.user ?? null);
-  });
-
-  // listen for login/logout
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      setUser(session?.user ?? null);
-    }
-  );
-
-  return () => {
-    listener.subscription.unsubscribe();
-  };
-
-}, []);
-
-  initAuth();
-
-  // 🔥 THIRD — keep listening for auth changes
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      setUser(session?.user ?? null);
-    }
-  );
-
-  return () => {
-    mounted = false;
-    listener.subscription.unsubscribe();
-  };
-
-}, []);
-
-  // Login modal
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginMsg, setLoginMsg] = useState("");
 
+  // ✅ Put YOUR email(s) here
+  const ADMIN_EMAILS = useMemo(
+    () =>
+      new Set(
+        [
+          "i-peters@outlook.com",
+          // "another.admin@email.com",
+        ].map((x) => x.toLowerCase().trim())
+      ),
+    []
+  );
+
+  const isAdmin = !!user && ADMIN_EMAILS.has((user.email || "").toLowerCase());
+
+  async function logout() {
+    await supabase.auth.signOut();
+    setLoginOpen(false);
+    setLoginMsg("");
+  }
+
   async function loginWithMagicLink() {
-    const email = loginEmail.trim();
+    const email = loginEmail.trim().toLowerCase();
     if (!email) return setLoginMsg("Enter your admin email.");
     setLoginBusy(true);
     setLoginMsg("");
-    const { error } = await supabase.auth.signInWithOtp({ email });
+
+    // Force redirect back to THIS site (Vercel in prod, localhost in dev)
+    const redirectTo = window.location.origin;
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: redirectTo },
+    });
+
     setLoginBusy(false);
     if (error) setLoginMsg(error.message);
     else setLoginMsg("Magic link sent. Check your email ✨");
   }
+
+  useEffect(() => {
+  let alive = true;
+
+  async function bootAuth() {
+    try {
+      // If Supabase returns a PKCE code, exchange it for a session
+      const hasCode = window.location.search.includes("code=");
+      if (hasCode) {
+        const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+        if (error) console.error("exchangeCodeForSession:", error.message);
+
+        // Clean URL so refresh doesn't repeat exchange
+        window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+      }
+
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.error("getSession:", error.message);
+      if (!alive) return;
+      setUser(data?.session?.user ?? null);
+    } catch (e) {
+      console.error("bootAuth crash:", e);
+    }
+  } // ✅ CLOSE bootAuth properly
+
+  bootAuth();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!alive) return;
+    setUser(session?.user ?? null);
+  });
+
+  return () => {
+    alive = false;
+    subscription.unsubscribe();
+  };
+}, []);
+
 
   // ----------------------------
   // APP STATE
@@ -149,6 +175,10 @@ useEffect(() => {
     group: "",
     origin: "",
   });
+  // NEW: tags for the selected breed
+const [breedTags, setBreedTags] = useState([]); // array of strings, e.g. ["kid-friendly", "low-shedding"]
+const [tagInput, setTagInput] = useState("");
+
   const [breedSaving, setBreedSaving] = useState(false);
   const [breedSaveMsg, setBreedSaveMsg] = useState("");
 
@@ -200,7 +230,8 @@ useEffect(() => {
   useEffect(() => {
     if (!isAdmin) setEditMode(false);
     if (!isAdmin && viewMode === "admin") setViewMode("detail");
-  }, [isAdmin]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   // ----------------------------
   // URL SHARE LINKS: ?petType=...&breed=...
@@ -219,13 +250,15 @@ useEffect(() => {
     else params.delete("petType");
     if (nextBreedId) params.set("breed", nextBreedId);
     else params.delete("breed");
+
     const qs = params.toString();
     const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    window.history.replaceState({}, "", newUrl);
+    window.history.replaceState({}, "", newUrl + window.location.hash);
   }
 
   useEffect(() => {
     updateShareUrl(petTypeId, breedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petTypeId, breedId]);
 
   async function copyShareLink() {
@@ -234,6 +267,8 @@ useEffect(() => {
       await navigator.clipboard.writeText(link);
       toast("Share link copied ✅");
     } catch {
+      // fallback
+      // eslint-disable-next-line no-alert
       prompt("Copy this link:", link);
     }
   }
@@ -306,8 +341,12 @@ useEffect(() => {
   }
 
   async function loadGuidesForBreed(bid) {
-    const { data, error } = await supabase.from("care_guides").select("category_id,content").eq("breed_id", bid);
+    const { data, error } = await supabase
+      .from("care_guides")
+      .select("category_id,content")
+      .eq("breed_id", bid);
     if (error) console.error(error);
+
     const map = {};
     for (const row of data ?? []) map[row.category_id] = row.content ?? "";
     setGuidesByCategoryId(map);
@@ -349,6 +388,7 @@ useEffect(() => {
     const { data: pub } = supabase.storage.from(sb.bucket).getPublicUrl(sb.path);
     const publicUrl = pub?.publicUrl;
 
+    // Prefer signed url for admin (private buckets)
     if (isAdmin) {
       const { data, error } = await supabase.storage.from(sb.bucket).createSignedUrl(sb.path, 60 * 60);
       if (!error && data?.signedUrl) {
@@ -368,7 +408,8 @@ useEffect(() => {
   useEffect(() => {
     if (!selectedBreed?.image_url) return;
     resolveImageSrc(selectedBreed.image_url);
-  }, [selectedBreed?.image_url, isAdmin]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBreed?.image_url, isAdmin]);
 
   // ----------------------------
   // THEME (glass + calm color)
@@ -407,7 +448,6 @@ useEffect(() => {
   }, [darkMode]);
 
   const calmGradients = useMemo(() => {
-    // calm, low-saturation accents
     return darkMode
       ? {
           a: "radial-gradient(700px 340px at 18% 12%, rgba(102,179,255,.18), transparent 70%)",
@@ -421,7 +461,6 @@ useEffect(() => {
         };
   }, [darkMode]);
 
-  // Per-category tone (used mainly in light mode, but subtle)
   const cardTone = useMemo(() => {
     const tones = {
       "Height & Weight": { tint: "rgba(102,179,255,.14)", border: "rgba(102,179,255,.28)" },
@@ -437,7 +476,7 @@ useEffect(() => {
   }, []);
 
   // ----------------------------
-  // SEARCH + FAVORITES + GRID
+  // FAVORITES + GRID
   // ----------------------------
   const filteredBreeds = useMemo(() => {
     const q = breedSearch.trim().toLowerCase();
@@ -540,91 +579,8 @@ useEffect(() => {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isAdmin, editMode, breedId, draftsByCategoryId]); // eslint-disable-line
-
-  // ----------------------------
-  // BROCHURE PDF EXPORT (new window HTML -> print)
-  // ----------------------------
-  async function brochurePdf() {
-    if (!selectedBreed) return;
-
-    const hero = selectedBreed.image_url ? await resolveImageSrc(selectedBreed.image_url) : "";
-
-    const sections = categories.map((cat) => {
-      const body = guidesByCategoryId[cat.id] ?? "";
-      return { title: cat.name, icon: cat.icon ?? "📌", body: body || "No info added yet." };
-    });
-
-    const html = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(selectedBreed.name)} Care Sheet</title>
-  <style>
-    *{ box-sizing:border-box; }
-    body{ font-family: system-ui, Segoe UI, Arial; margin:0; background:#fff; color:#111; }
-    .wrap{ max-width: 920px; margin: 0 auto; padding: 28px; }
-    .hero{ border-radius: 22px; overflow:hidden; border:1px solid #e6e6e6; }
-    .heroImg{ width:100%; height: 320px; object-fit:cover; display:block; }
-    .heroInner{ padding: 20px 22px; }
-    h1{ margin:0; font-size: 34px; letter-spacing:-0.4px; }
-    .desc{ margin-top:10px; line-height:1.45; color:#333; }
-    .chips{ display:flex; flex-wrap:wrap; gap: 10px; margin-top: 14px; }
-    .chip{ border: 1px solid #ddd; border-radius: 999px; padding: 8px 10px; font-size: 13px; background:#fafafa; }
-    .grid{ margin-top: 16px; display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .card{ border:1px solid #e6e6e6; border-radius: 18px; padding: 14px; }
-    .cardTitle{ font-weight: 900; display:flex; align-items:center; gap: 8px; }
-    .cardBody{ margin-top: 10px; white-space: pre-wrap; line-height:1.45; color:#222; font-size: 13px; }
-    .footer{ margin-top: 18px; color:#666; font-size: 12px; }
-    @media print {
-      .wrap{ padding: 0; }
-      .grid{ grid-template-columns: 1fr 1fr; }
-      .heroImg{ height: 300px; }
-      @page { margin: 12mm; }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="hero">
-      ${hero ? `<img class="heroImg" src="${hero}" />` : ``}
-      <div class="heroInner">
-        <h1>${escapeHtml(selectedBreed.name)} Care Sheet</h1>
-        ${selectedBreed.description ? `<div class="desc">${escapeHtml(selectedBreed.description)}</div>` : ``}
-        <div class="chips">
-          ${selectedBreed.lifespan ? `<div class="chip">🕰️ <b>Lifespan:</b> ${escapeHtml(selectedBreed.lifespan)}</div>` : ``}
-          ${(selectedBreed.size || selectedBreed.height_weight) ? `<div class="chip">📏 <b>Size:</b> ${escapeHtml(selectedBreed.size ?? selectedBreed.height_weight)}</div>` : ``}
-          ${selectedBreed.group ? `<div class="chip">🏷️ <b>Group:</b> ${escapeHtml(selectedBreed.group)}</div>` : ``}
-          ${selectedBreed.origin ? `<div class="chip">🌍 <b>Origin:</b> ${escapeHtml(selectedBreed.origin)}</div>` : ``}
-        </div>
-      </div>
-    </div>
-
-    <div class="grid">
-      ${sections
-        .map(
-          (s) => `
-        <div class="card">
-          <div class="cardTitle">${escapeHtml(s.icon)} ${escapeHtml(s.title)}</div>
-          <div class="cardBody">${escapeHtml(s.body)}</div>
-        </div>
-      `
-        )
-        .join("")}
-    </div>
-
-    <div class="footer">Generated from Zoo Database (Supabase + React)</div>
-  </div>
-  <script>window.onload = () => { window.print(); };</script>
-</body>
-</html>`;
-
-    const w = window.open("", "_blank");
-    if (!w) return alert("Popup blocked. Allow popups for brochure PDF.");
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, editMode, breedId, draftsByCategoryId]);
 
   // ----------------------------
   // ADMIN: BREED EDITOR + IMAGE UPLOAD (auto crop)
@@ -658,6 +614,9 @@ useEffect(() => {
       group: b.group ?? "",
       origin: b.origin ?? "",
     });
+
+    //Load tags into form (NEW)
+     // assuming b.tags is an array of strings
     setBreedSaveMsg("");
   }
 
@@ -723,7 +682,6 @@ useEffect(() => {
     toast("Deleted ✅");
   }
 
-  // Auto center-crop to 16:9 + resize -> JPG blob
   async function cropResizeToBlob(file, targetW = 1600, targetH = 900, quality = 0.88) {
     const img = await readFileAsImage(file);
 
@@ -779,7 +737,7 @@ useEffect(() => {
 
     const sbRef = `sb://${bucket}/${path}`;
     setBreedForm((p) => ({ ...p, image_url: sbRef }));
-    setImageSrcCache((p) => ({ ...p, [sbRef]: "" })); // force re-resolve
+    setImageSrcCache((p) => ({ ...p, [sbRef]: "" }));
     toast("Image uploaded ✅");
   }
 
@@ -802,7 +760,8 @@ useEffect(() => {
       el.removeEventListener("dragover", onDragOver);
       el.removeEventListener("drop", onDrop);
     };
-  }, [dropRef.current, isAdmin]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   // ----------------------------
   // ADMIN: CARE CATEGORIES CRUD
@@ -863,43 +822,12 @@ useEffect(() => {
   }
 
   // ----------------------------
-  // PRINT CSS
-  // ----------------------------
-  const printCss = `
-    @media print {
-      body { background: #fff !important; }
-      .no-print { display: none !important; }
-      .print-only { display: block !important; }
-      .print-sheet {
-        max-width: 760px !important;
-        margin: 0 auto !important;
-        color: #111 !important;
-      }
-      .print-sheet h1, .print-sheet h2, .print-sheet h3, .print-sheet p, .print-sheet div, .print-sheet span {
-        color: #111 !important;
-      }
-      .print-card {
-        border: 1px solid #ddd !important;
-        border-radius: 12px !important;
-        padding: 14px !important;
-        margin-top: 10px !important;
-        background: #fff !important;
-        box-shadow: none !important;
-      }
-      @page { margin: 12mm; }
-    }
-  `;
-
-  // ----------------------------
   // UI helpers (elite)
   // ----------------------------
   const ui = useMemo(() => createUi(theme), [theme]);
 
   // Custom combobox items
-  const petTypeItems = useMemo(
-    () => petTypes.map((pt) => ({ value: pt.id, label: pt.name })),
-    [petTypes]
-  );
+  const petTypeItems = useMemo(() => petTypes.map((pt) => ({ value: pt.id, label: pt.name })), [petTypes]);
 
   const breedItems = useMemo(
     () =>
@@ -927,8 +855,6 @@ useEffect(() => {
         overflowX: "hidden",
       }}
     >
-      <style>{printCss}</style>
-
       {/* Calm gradient fields */}
       <div
         aria-hidden="true"
@@ -940,6 +866,7 @@ useEffect(() => {
           background: `${calmGradients.a}, ${calmGradients.b}, ${calmGradients.c}, linear-gradient(180deg, ${theme.bg0}, ${theme.bg1})`,
         }}
       />
+
       {/* Soft noise */}
       <div
         aria-hidden="true"
@@ -957,14 +884,13 @@ useEffect(() => {
 
       {/* Toast */}
       <div
-        className="no-print"
         style={{
           position: "fixed",
           left: "50%",
           top: 18,
           transform: "translateX(-50%)",
           zIndex: 50,
-          transition: "opacity .18s ease, transform .18s ease",
+          transition: "opacity .18s ease",
           opacity: toastText ? 1 : 0,
           pointerEvents: "none",
         }}
@@ -990,17 +916,7 @@ useEffect(() => {
       <div style={{ position: "relative", zIndex: 1, padding: 34 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* HEADER */}
-          <button
-  onClick={async () => {
-    const { data } = await supabase.auth.getSession();
-    alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
-  }}
-  style={btnStyle({ fontWeight: 900 })}
->
-  🧪 Session Check
-</button>
-
-          <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
             <div>
               <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
                 <h1 style={{ margin: 0, fontSize: 48, letterSpacing: -0.9, lineHeight: 1.02 }}>Zoo Database</h1>
@@ -1061,12 +977,23 @@ useEffect(() => {
                   </button>
                 </>
               )}
+
+              <button
+                onClick={async () => {
+                  const { data } = await supabase.auth.getSession();
+                  alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
+                }}
+                style={ui.btn({ weight: 900 })}
+                title="Debug: confirm session exists"
+              >
+                🧪 Session Check
+              </button>
             </div>
           </div>
 
           {/* TOP CONTROLS */}
-          <div className="no-print" style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <GlassCard ui={ui}>
+          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <GlassCard>
               <div style={ui.hLabel()}>Pet Type</div>
               <ComboBox
                 ui={ui}
@@ -1084,21 +1011,10 @@ useEffect(() => {
                 <button onClick={copyShareLink} style={ui.btn({ weight: 900 })}>
                   🔗 Share Link
                 </button>
-
-                {selectedBreed && (
-                  <>
-                    <button onClick={() => window.print()} style={ui.btn({ weight: 900 })}>
-                      🖨️ Print/PDF
-                    </button>
-                    <button onClick={brochurePdf} style={ui.btn({ weight: 900 })}>
-                      📄 Brochure PDF
-                    </button>
-                  </>
-                )}
               </div>
             </GlassCard>
 
-            <GlassCard ui={ui}>
+            <GlassCard>
               <div style={ui.hLabel()}>Breed</div>
 
               <input
@@ -1122,7 +1038,7 @@ useEffect(() => {
 
           {/* GRID VIEW */}
           {viewMode === "grid" && petTypeId && (
-            <div className="no-print" style={{ marginTop: 18 }}>
+            <div style={{ marginTop: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ color: theme.subtext }}>
                   Showing <b>{sortedBreeds.length}</b> breed(s)
@@ -1168,10 +1084,10 @@ useEffect(() => {
 
           {/* ADMIN VIEW */}
           {viewMode === "admin" && isAdmin && (
-            <div className="no-print" style={{ marginTop: 18 }}>
+            <div style={{ marginTop: 18 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16 }}>
                 {/* Breed editor */}
-                <GlassCard ui={ui}>
+                <GlassCard>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                     <div style={{ fontWeight: 950, fontSize: 16 }}>Breed Editor</div>
                     <button onClick={resetBreedForm} style={ui.btn({ weight: 900 })}>
@@ -1232,7 +1148,7 @@ useEffect(() => {
                     </div>
 
                     <div style={{ gridColumn: "span 2" }}>
-                      <div style={ui.label()}>Height/Weight (optional alt field)</div>
+                      <div style={ui.label()}>Height/Weight</div>
                       <input
                         value={breedForm.height_weight}
                         onChange={(e) => setBreedForm((p) => ({ ...p, height_weight: e.target.value }))}
@@ -1277,7 +1193,7 @@ useEffect(() => {
                       </div>
 
                       {breedForm.image_url && (
-                        <BreedImagePreview rawUrl={breedForm.image_url} resolveImageSrc={resolveImageSrc} ui={ui} theme={theme} />
+                        <BreedImagePreview rawUrl={breedForm.image_url} resolveImageSrc={resolveImageSrc} theme={theme} />
                       )}
                     </div>
                   </div>
@@ -1312,7 +1228,7 @@ useEffect(() => {
                 </GlassCard>
 
                 {/* Categories editor */}
-                <GlassCard ui={ui}>
+                <GlassCard>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                     <div style={{ fontWeight: 950, fontSize: 16 }}>Care Categories</div>
                     <button onClick={resetCatForm} style={ui.btn({ weight: 900 })}>
@@ -1377,13 +1293,7 @@ useEffect(() => {
           {/* DETAIL VIEW */}
           {viewMode === "detail" && selectedBreed && (
             <>
-              <div className="print-only print-sheet" style={{ display: "none" }}>
-                <h1 style={{ marginTop: 0 }}>{selectedBreed.name} Care Sheet</h1>
-                {selectedBreed.description && <p>{selectedBreed.description}</p>}
-              </div>
-
               <div
-                className="print-sheet"
                 style={{
                   marginTop: 22,
                   borderRadius: 24,
@@ -1405,8 +1315,7 @@ useEffect(() => {
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background:
-                          "linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.0) 40%, rgba(0,0,0,.35))",
+                        background: "linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.0) 40%, rgba(0,0,0,.35))",
                       }}
                     />
                   </div>
@@ -1416,10 +1325,14 @@ useEffect(() => {
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <h2 style={{ margin: 0, fontSize: 30, letterSpacing: -0.4 }}>{selectedBreed.name}</h2>
-                      {selectedBreed.description && <div style={{ marginTop: 8, color: theme.subtext, lineHeight: 1.55 }}>{selectedBreed.description}</div>}
+                      {selectedBreed.description && (
+                        <div style={{ marginTop: 8, color: theme.subtext, lineHeight: 1.55 }}>
+                          {selectedBreed.description}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="no-print" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <button
                         onClick={() => toggleFavorite(selectedBreed.id)}
                         style={ui.btn({ icon: true, glow: isFavorite })}
@@ -1435,27 +1348,25 @@ useEffect(() => {
                       <button onClick={copyShareLink} style={ui.btn({ weight: 900 })}>
                         🔗 Share
                       </button>
-
-                      <button onClick={() => window.print()} style={ui.btn({ weight: 900 })}>
-                        🖨️ Print/PDF
-                      </button>
-
-                      <button onClick={brochurePdf} style={ui.btn({ weight: 900 })}>
-                        📄 Brochure PDF
-                      </button>
                     </div>
                   </div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
-                    {selectedBreed.lifespan && <Chip ui={ui}>🕰️ <b>Lifespan:</b> {selectedBreed.lifespan}</Chip>}
-                    {(selectedBreed.size || selectedBreed.height_weight) && (
-                      <Chip ui={ui}>📏 <b>Size:</b> {selectedBreed.size ?? selectedBreed.height_weight}</Chip>
+                    {selectedBreed.lifespan && (
+                      <Chip>🕰️ <b>Lifespan:</b> {selectedBreed.lifespan}</Chip>
                     )}
-                    {selectedBreed.group && <Chip ui={ui}>🏷️ <b>Group:</b> {selectedBreed.group}</Chip>}
-                    {selectedBreed.origin && <Chip ui={ui}>🌍 <b>Origin:</b> {selectedBreed.origin}</Chip>}
+                    {(selectedBreed.size || selectedBreed.height_weight) && (
+                      <Chip>📏 <b>Size:</b> {selectedBreed.size ?? selectedBreed.height_weight}</Chip>
+                    )}
+                    {selectedBreed.group && (
+                      <Chip>🏷️ <b>Group:</b> {selectedBreed.group}</Chip>
+                    )}
+                    {selectedBreed.origin && (
+                      <Chip>🌍 <b>Origin:</b> {selectedBreed.origin}</Chip>
+                    )}
                   </div>
 
-                  <div className="no-print" style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button onClick={openAllCategories} style={ui.btn()}>
                       Expand all
                     </button>
@@ -1469,7 +1380,11 @@ useEffect(() => {
                           {editMode ? "✏️ Edit ON" : "✏️ Edit OFF"}
                         </button>
 
-                        <button onClick={() => setAutoSave((v) => !v)} style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral" })} disabled={!editMode}>
+                        <button
+                          onClick={() => setAutoSave((v) => !v)}
+                          style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral" })}
+                          disabled={!editMode}
+                        >
                           {autoSave ? "💾 Autosave ON" : "💾 Autosave OFF"}
                         </button>
                       </>
@@ -1479,7 +1394,7 @@ useEffect(() => {
               </div>
 
               {/* Care Cards */}
-              <div className="print-sheet" style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 16 }}>
                 {categories.map((cat) => {
                   const tone = cardTone(cat.name);
                   const isOpen = openCategoryIds.has(cat.id);
@@ -1493,21 +1408,17 @@ useEffect(() => {
                   return (
                     <div
                       key={cat.id}
-                      className="print-card"
                       style={{
                         marginTop: 12,
                         borderRadius: 18,
                         overflow: "hidden",
                         border: `1px solid ${theme.border}`,
-                        background: darkMode
-                          ? theme.glass
-                          : `linear-gradient(180deg, ${theme.glass}, ${theme.glass2})`,
+                        background: darkMode ? theme.glass : `linear-gradient(180deg, ${theme.glass}, ${theme.glass2})`,
                         boxShadow: theme.shadow2,
                         backdropFilter: "blur(14px)",
                         position: "relative",
                       }}
                     >
-                      {/* subtle tint */}
                       <div
                         aria-hidden="true"
                         style={{
@@ -1515,12 +1426,11 @@ useEffect(() => {
                           inset: 0,
                           pointerEvents: "none",
                           background: tone.tint,
-                          opacity: darkMode ? 0.22 : 0.60,
+                          opacity: darkMode ? 0.22 : 0.6,
                         }}
                       />
 
                       <button
-                        className="no-print"
                         onClick={() => toggleCategory(cat.id)}
                         style={{
                           position: "relative",
@@ -1545,12 +1455,15 @@ useEffect(() => {
                         <div style={{ opacity: 0.8, fontSize: 14 }}>{isOpen ? "▲" : "▼"}</div>
                       </button>
 
-                      <div className="print-only" style={{ display: "none", padding: "0 16px 16px 16px", position: "relative", zIndex: 1 }}>
-                        <div style={{ fontWeight: 900 }}>{cat.name}</div>
-                        <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{content ? content : "No info added yet."}</div>
-                      </div>
-
-                      <div className="no-print" style={{ position: "relative", zIndex: 1, maxHeight: isOpen ? 1600 : 0, transition: "max-height .25s ease", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          position: "relative",
+                          zIndex: 1,
+                          maxHeight: isOpen ? 1600 : 0,
+                          transition: "max-height .25s ease",
+                          overflow: "hidden",
+                        }}
+                      >
                         <div style={{ padding: "0 16px 16px 16px" }}>
                           {!editMode && (
                             <div style={{ lineHeight: 1.65, whiteSpace: "pre-wrap", color: theme.subtext }}>
@@ -1609,21 +1522,14 @@ useEffect(() => {
           )}
 
           {viewMode === "detail" && !selectedBreed && (
-            <div className="no-print" style={{ marginTop: 22, color: theme.subtext }}>
-              Pick a Pet Type and a Breed to view its care sheet.
-            </div>
+            <div style={{ marginTop: 22, color: theme.subtext }}>Pick a Pet Type and a Breed to view its care sheet.</div>
           )}
         </div>
       </div>
 
       {/* Login Modal */}
       {loginOpen && (
-        <Modal
-          title="Admin Login"
-          subtitle="Magic link login (Supabase)"
-          onClose={() => setLoginOpen(false)}
-          ui={ui}
-        >
+        <Modal title="Admin Login" subtitle="Magic link login (Supabase)" onClose={() => setLoginOpen(false)} ui={ui}>
           <div style={{ display: "grid", gap: 10 }}>
             <input
               value={loginEmail}
@@ -1640,7 +1546,7 @@ useEffect(() => {
             </button>
             {loginMsg && <div style={ui.msg(loginMsg)}>{loginMsg}</div>}
             <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4 }}>
-              If the link opens but does not log you in, check the Supabase Auth redirect URL settings and your site URL.
+              If the link opens but does not log you in, double-check Supabase Auth: Site URL + Redirect URLs.
             </div>
           </div>
         </Modal>
@@ -1761,9 +1667,7 @@ function createUi(theme) {
     badge: (tone) => ({
       padding: "6px 10px",
       borderRadius: 999,
-      border: `1px solid ${
-        tone === "good" ? "rgba(120,255,196,.35)" : tone === "bad" ? "rgba(255,120,120,.35)" : theme.border
-      }`,
+      border: `1px solid ${tone === "good" ? "rgba(120,255,196,.35)" : tone === "bad" ? "rgba(255,120,120,.35)" : theme.border}`,
       background: theme.glass2,
       fontWeight: 900,
       color: theme.text,
@@ -1775,7 +1679,7 @@ function createUi(theme) {
 /* ----------------------------
    COMPONENTS
 ---------------------------- */
-function GlassCard({ children, ui }) {
+function GlassCard({ children }) {
   return (
     <div
       style={{
@@ -1787,7 +1691,6 @@ function GlassCard({ children, ui }) {
         backdropFilter: "blur(16px)",
       }}
     >
-      {/* inner for crisp border */}
       <div style={{ borderRadius: 16, border: `1px solid rgba(255,255,255,.10)`, background: "rgba(255,255,255,.02)", padding: 14 }}>
         {children}
       </div>
@@ -1795,7 +1698,7 @@ function GlassCard({ children, ui }) {
   );
 }
 
-function Chip({ children, ui }) {
+function Chip({ children }) {
   return (
     <span
       style={{
@@ -1854,7 +1757,7 @@ function Segment({ value, onChange, options, ui }) {
   );
 }
 
-function GridCard({ ui, theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav, onNeedResolve }) {
+function GridCard({ theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav, onNeedResolve }) {
   return (
     <div
       onClick={onClick}
@@ -1873,11 +1776,7 @@ function GridCard({ ui, theme, darkMode, breed, isFav, imgSrc, onClick, onToggle
     >
       <div style={{ height: 150, background: darkMode ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.35)" }}>
         {breed.image_url ? (
-          <img
-            src={imgSrc || ""}
-            alt={breed.name}
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-          />
+          <img src={imgSrc || ""} alt={breed.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         ) : (
           <div style={{ padding: 14, color: theme.subtext }}>No image</div>
         )}
@@ -1956,12 +1855,6 @@ function Modal({ title, subtitle, children, onClose, ui }) {
   );
 }
 
-/**
- * ComboBox: custom dropdown so your selects are not ugly.
- * - Click to open
- * - Type to filter
- * - ESC closes
- */
 function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disabled = false }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -2009,9 +1902,7 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
           gap: 10,
         }}
       >
-        <span style={{ opacity: selectedLabel ? 1 : 0.72 }}>
-          {selectedLabel || placeholder}
-        </span>
+        <span style={{ opacity: selectedLabel ? 1 : 0.72 }}>{selectedLabel || placeholder}</span>
         <span style={{ opacity: 0.75 }}>{open ? "▲" : "▼"}</span>
       </button>
 
@@ -2076,7 +1967,7 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
   );
 }
 
-function BreedImagePreview({ rawUrl, resolveImageSrc, ui, theme }) {
+function BreedImagePreview({ rawUrl, resolveImageSrc, theme }) {
   const [src, setSrc] = useState("");
 
   useEffect(() => {
@@ -2088,7 +1979,7 @@ function BreedImagePreview({ rawUrl, resolveImageSrc, ui, theme }) {
     return () => {
       mounted = false;
     };
-  }, [rawUrl]); // eslint-disable-line
+  }, [rawUrl, resolveImageSrc]);
 
   if (!rawUrl) return null;
 
@@ -2106,15 +1997,6 @@ function BreedImagePreview({ rawUrl, resolveImageSrc, ui, theme }) {
 /* ----------------------------
    UTIL
 ---------------------------- */
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function readFileAsImage(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
