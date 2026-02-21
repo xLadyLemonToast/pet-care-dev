@@ -108,3 +108,43 @@ button:focus-visible{
 input::placeholder{
   color: rgba(255,255,255,.45);
 }
+
+/* Footer */
+.lux-footer {
+  margin-top: 60px;
+  padding: 24px 0;
+
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: .08em;
+
+  color: rgba(255,255,255,.35);
+
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+
+/* ---------- GRID CARDS ---------- */
+.lux-gridcard:hover{
+  transform: translateY(-3px);
+  border-color: rgba(214,179,106,.22);
+  box-shadow:
+    0 26px 80px rgba(0,0,0,.32),
+    0 0 0 1px rgba(214,179,106,.10),
+    inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* ---------- TOPBAR ACTIONS (optional) ---------- */
+.lux-topbar .lux-actions{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  align-items:flex-end;
+  min-width: 320px;
+}
+.lux-topbar .lux-actions__row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}

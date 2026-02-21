@@ -343,7 +343,8 @@ async function saveBreedTags(breedId, tags) {
       setOpenCategoryIds(new Set());
       return;
     }
-    loadBreedBundle(breedId);
+    loadBreedDetails(breedId);
+    loadGuidesForBreed(breedId);
   }, [breedId]);
 
   async function loadPetTypes() {
@@ -405,44 +406,10 @@ async function saveBreedTags(breedId, tags) {
     setStatusByCategoryId({});
   }
 
-  async function loadBreedBundle(id) {
-    const { data, error } = await supabase
-      .from("breeds")
-      .select(
-        `
-        *,
-        breed_tags(tag),
-        care_guides(category_id,content)
-      `
-      )
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      console.error(error);
-      setSelectedBreed(null);
-      setGuidesByCategoryId({});
-      setDraftsByCategoryId({});
-      setSavingByCategoryId({});
-      setStatusByCategoryId({});
-      return;
-    }
-
-    setSelectedBreed(data ?? null);
-
-    const map = {};
-    for (const row of data?.care_guides ?? []) {
-      map[row.category_id] = row.content ?? "";
-    }
-    setGuidesByCategoryId(map);
-    setDraftsByCategoryId(map);
-    setSavingByCategoryId({});
-    setStatusByCategoryId({});
-  }
-
   async function refreshCurrentBreed() {
     if (!breedId) return;
-    await loadBreedBundle(breedId);
+    await loadBreedDetails(breedId);
+    await loadGuidesForBreed(breedId);
     toast("Refreshed 🔄");
   }
 
@@ -1051,7 +1018,7 @@ const { data, error } = await supabase
             padding: "9px 12px",
             borderRadius: 12,
             background: theme.glass,
-            border: `1px solid ${theme.border}`,
+            border: "1px solid " + theme.border,
             backdropFilter: "blur(14px)",
             boxShadow: theme.shadow2,
             color: theme.text,
@@ -1067,110 +1034,156 @@ const { data, error } = await supabase
       <div style={{ position: "relative", zIndex: 1, padding: 34 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* HEADER */}
-       {/* HEADER */}
-<header style={{ marginBottom: 48 }}>
+          <div className="lux-topbar" style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+            <div>
 
-  {/* TOP UTILITY BAR */}
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "18px 0",
-      borderBottom: `1px solid ${theme.border}`,
-      marginBottom: 36,
-    }}
-  >
-    <div style={{ 
-      fontWeight: 900, 
-      opacity: 0.60
-       + (darkMode ? 0.35 : 0.25),
-      fontSize: 20,
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      letterSpacing: 0.18,
-      color: theme.subtext,
-      
-    }}>
-      🐾 ZooDB
-    </div>
+<div className="lux-actions">
+  {/* Row 1: always-visible primary controls */}
+  <div className="lux-actions__row">
+    <button onClick={() => setDarkMode((d) => !d)} style={ui.btn({ size: "sm" })}>
+      {darkMode ? "🌙 Dark" : "☀️ Light"}
+    </button>
 
-    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-      <button
-        onClick={() => setDarkMode(d => !d)}
-        style={ui.btn({ icon: true })}
-        title="Toggle theme"
-      >
-        {darkMode ? "🌙" : "☀️"}
-      </button>
-
-      {!user ? (
-        <button
-          onClick={() => setLoginOpen(true)}
-          style={{
-    background: "transparent",
-    border: "none",
-    fontWeight: 700,
-    color: theme.text,
-    cursor: "pointer",
-    opacity: 0.75,
-  }}
-        >
-          Admin Login
-        </button>
-      ) : (
-        <button
-          onClick={logout}
-          style={ui.btn({ weight: 900, tone: "bad" })}
-        >
-          Logout
-        </button>
-      )}
-    </div>
-  </div>
-
-  {/* HERO TITLE */}
-  <div style={{ textAlign: "center", marginBottom: 36 }}>
-    <h1
-      style={{
-        margin: 0,
-        fontSize: 48,
-        fontWeight: 950,
-        letterSpacing: -1.2,
-        textShadow: "0 10px 30px rgba(122,162,255,.25)",
-      }}
-    >
-      Zoo Database 🐾
-    </h1>
-
-    <div
-      style={{
-        marginTop: 12,
-        fontSize: 14,
-        color: theme.subtext,
-      }}
-    >
-      {isAdmin
-        ? "Admin session active."
-        : "Browse mode. Log in to edit and manage content."}
-    </div>
-  </div>
-
-  {/* VIEW NAVIGATION */}
-  <div style={{ display: "flex", justifyContent: "center" }}>
     <Segment
       value={viewMode}
-      onChange={setViewMode}
+      onChange={(v) => setViewMode(v)}
       options={[
         { value: "detail", label: "🧾 Detail" },
-        { value: "grid", label: "🧩 Grid" },
+        { 
+          value: "grid", 
+          label: "🧩 Grid", 
+          disabled: !petTypeId, 
+          title: !petTypeId ? "Pick a Pet Type first" : "" 
+        },
+        { value: "grid", label: "🧩 Grid", disabled: !petTypeId, title: !petTypeId ? "Pick a Pet Type first" : "" },
+        ...(isAdmin ? [{ value: "admin", label: "🛠️ Admin" }] : []),
       ]}
       ui={ui}
     />
   </div>
 
-</header>
+  {/* Row 2: contextual actions (admin/login/debug) */}
+  <div className="lux-actions__row lux-actions__row--secondary">
+    {!isAdmin ? (
+      <button
+        onClick={() => {
+          setLoginOpen(true);
+          setLoginMsg("");
+          setLoginEmail("");
+        }}
+        style={ui.btn({ weight: 900, glow: true, size: "sm" })}
+      >
+        Admin Login
+      </button>
+    ) : (
+      <>
+        <div className="lux-adminPills">
+          <button
+            onClick={() => setEditMode((v) => !v)}
+            style={ui.btn({ weight: 900, tone: editMode ? "good" : "neutral", size: "sm" })}
+          >
+            {editMode ? "✏️ Edit: ON" : "✏️ Edit: OFF"}
+          </button>
+
+          <button
+            onClick={() => setAutoSave((v) => !v)}
+            style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral", size: "sm" })}
+            disabled={!editMode}
+            title="Autosave (debounced)"
+          >
+            {autoSave ? "💾 Autosave: ON" : "💾 Autosave: OFF"}
+          </button>
+
+          <button onClick={logout} style={ui.btn({ size: "sm" })}>
+            Logout
+          </button>
+        </div>
+
+        {/* Debug should NOT be equal weight to real controls */}
+        <button
+          onClick={async () => {
+            const { data } = await supabase.auth.getSession();
+            alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
+          }}
+          style={ui.btn({ size: "sm" })}
+          title="Debug: confirm session exists"
+        >
+          🧪 Session
+        </button>
+      </>
+    )}
+  </div>
+</div>
+
+              <div style={{ marginTop: 8, color: theme.subtext, fontSize: 14 }}>
+                {isAdmin ? "Admin session active. Database is locked to you." : "Browse mode. Log in to edit/add content."}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={() => setDarkMode((d) => !d)} style={ui.btn()}>
+                {darkMode ? "🌙 Dark" : "☀️ Light"}
+              </button>
+
+              <Segment
+                value={viewMode}
+                onChange={(v) => setViewMode(v)}
+                options={[
+                  { value: "detail", label: "🧾 Detail" },
+                  { value: "grid", label: "🧩 Grid", disabled: !petTypeId, title: !petTypeId ? "Pick a Pet Type first" : "" },
+                  ...(isAdmin ? [{ value: "admin", label: "🛠️ Admin" }] : []),
+                ]}
+                ui={ui}
+              />
+
+              {!isAdmin ? (
+                <button
+                  onClick={() => {
+                    setLoginOpen(true);
+                    setLoginMsg("");
+                    setLoginEmail("");
+                  }}
+                  style={ui.btn({ weight: 900, glow: true })}
+                >
+                  Admin Login
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setEditMode((v) => !v)}
+                    style={ui.btn({ weight: 900, tone: editMode ? "good" : "neutral" })}
+                  >
+                    {editMode ? "✏️ Edit: ON" : "✏️ Edit: OFF"}
+                  </button>
+
+                  <button
+                    onClick={() => setAutoSave((v) => !v)}
+                    style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral" })}
+                    disabled={!editMode}
+                    title="Autosave (debounced)"
+                  >
+                    {autoSave ? "💾 Autosave: ON" : "💾 Autosave: OFF"}
+                  </button>
+
+                  <button onClick={logout} style={ui.btn()}>
+                    Logout
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={async () => {
+                  const { data } = await supabase.auth.getSession();
+                  alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
+                }}
+                style={ui.btn({ weight: 900 })}
+                title="Debug: confirm session exists"
+              >
+                🧪 Session Check
+              </button>
+            </div>
+          </div>
+
           {/* TOP CONTROLS */}
           <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <GlassCard>
@@ -1588,7 +1601,7 @@ const { data, error } = await supabase
                   borderRadius: 24,
                   overflow: "hidden",
                   boxShadow: theme.shadow,
-                  border: `1px solid ${theme.border}`,
+                  border: "1px solid " + theme.border,
                   background: theme.glass,
                   backdropFilter: "blur(16px)",
                 }}
@@ -1689,13 +1702,7 @@ const { data, error } = await supabase
                 </div>
               </div>
 
-              
-              {/* Quick facts */}
-              <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-                <QuickFacts theme={theme} breed={selectedBreed} />
-              </div>
-
-{/* Care Cards */}
+              {/* Care Cards */}
               <div style={{ marginTop: 16 }}>
                 {categories.map((cat) => {
                   const tone = cardTone(cat.name);
@@ -1714,7 +1721,7 @@ const { data, error } = await supabase
                         marginTop: 12,
                         borderRadius: 18,
                         overflow: "hidden",
-                        border: `1px solid ${theme.border}`,
+                        border: "1px solid " + theme.border,
                         background: darkMode ? theme.glass : `linear-gradient(180deg, ${theme.glass}, ${theme.glass2})`,
                         boxShadow: theme.shadow2,
                         backdropFilter: "blur(14px)",
@@ -1829,45 +1836,43 @@ const { data, error } = await supabase
         </div>
       </div>
       
-  const loginMagicLink = loginWithMagicLink;
+{/* Login Modal */}
+{loginOpen && (
+  <Modal
+    title="Admin Login"
+    subtitle="Magic link login (Supabase)"
+    onClose={() => setLoginOpen(false)}
+    ui={ui}
+  >
+    <div style={{ display: "grid", gap: 10 }}>
+      <input
+        value={loginEmail}
+        onChange={(e) => setLoginEmail(e.target.value)}
+        placeholder="you@company.com"
+        style={ui.input()}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === "Enter") loginWithMagicLink();
+        }}
+      />
 
-      {/* Login Modal */}
-      {loginOpen && (
-        <Modal title="Admin Login" subtitle="Magic link login (Supabase)" onClose={() => setLoginOpen(false)} ui={ui}>
-          <div style={{ display: "grid", gap: 10 }}>
-            <input
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              placeholder="you@company.com"
-              style={ui.input()}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") loginWithMagicLink();
-              }}
-            />
-            <button onClick={loginWithMagicLink} disabled={loginBusy} style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}>
-              {loginBusy ? "Sending..." : "Send Magic Link"}
-            </button>
-            {loginMsg && <div style={ui.msg(loginMsg)}>{loginMsg}</div>}
-            <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4 }}>
-              If the link opens but does not log you in, double-check Supabase Auth: Site URL + Redirect URLs.
-            
-            {/* FOOTER — PUT IT HERE */}
-<footer style={{
-  marginTop: 80,
-  padding: "32px 0",
-  textAlign: "center",
-  opacity: .5,
-  fontSize: 13,
-  letterSpacing: ".08em"
-}}>
-  © {new Date().getFullYear()} Made by Immaline Peters. All rights reserved.
-</footer>
+      <button
+        onClick={loginWithMagicLink}
+        disabled={loginBusy}
+        style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+      >
+        {loginBusy ? "Sending..." : "Send Magic Link"}
+      </button>
 
-</div>
-);</div>
-        </Modal>
-      )}
+      {loginMsg && <div style={ui.msg(loginMsg)}>{loginMsg}</div>}
+
+      <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4 }}>
+        If the link opens but does not log you in, double-check Supabase Auth: Site URL + Redirect URLs.
+      </div>
+    </div>
+  </Modal>
+)}
+
     </div>
   );
 }
@@ -1876,19 +1881,19 @@ const { data, error } = await supabase
    UI FACTORY
 ---------------------------- */
 function createUi(theme) {
-  const baseBtn = {
-    borderRadius: 12,
-    padding: "9px 12px",
-    border: `1px solid ${theme.border}`,
-    background: theme.glass,
-    color: theme.text,
-    cursor: "pointer",
-    fontWeight: 650,
-    letterSpacing: 0.2,
-    boxShadow: theme.shadow2,
-    backdropFilter: "blur(14px)",
-    transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease",
-  };
+const baseBtn = {
+  borderRadius: 12,
+  padding: "9px 12px",
+  border: "1px solid " + theme.border,
+  background: theme.glass,
+  color: theme.text,
+  cursor: "pointer",
+  fontWeight: 650,
+  letterSpacing: 0.2,
+  boxShadow: theme.shadow2,
+  backdropFilter: "blur(14px)",
+  transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease",
+};
 
   function toneBorder(tone) {
     if (tone === "good") return "rgba(120,255,196,.36)";
@@ -1897,102 +1902,152 @@ function createUi(theme) {
     return theme.border;
   }
 
-  return {
-    btn: (opts = {}) => {
-      const { weight = 800, glow = false, disabled = false, tone = "neutral", icon = false } = opts;
-      return {
-        ...baseBtn,
-        fontWeight: weight,
-        opacity: disabled ? 0.65 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
-        padding: icon ? "10px 12px" : baseBtn.padding,
-        borderColor: glow ? theme.accentSoft : toneBorder(tone),
-        boxShadow: glow ? `0 16px 44px ${theme.accentSoft}` : theme.shadow2,
-      };
-    },
-    iconBtn: () => ({
-      ...baseBtn,
-      padding: "8px 10px",
-      fontSize: 13,
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: 38,
-      boxShadow: "none",
-      background: theme.glass2,
-    }),
-    input: (extra = {}) => ({
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: 12,
-      border: `1px solid ${theme.border}`,
-      background: theme.glass2,
-      color: theme.text,
-      outline: "none",
-      boxShadow: "none",
-      backdropFilter: "blur(12px)",
-      transition: "border-color .12s ease, box-shadow .12s ease",
-      ...extra,
-    }),
-    textarea: (extra = {}) => ({
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: 12,
-      border: `1px solid ${theme.border}`,
-      background: theme.glass2,
-      color: theme.text,
-      outline: "none",
-      resize: "vertical",
-      boxShadow: "none",
-      backdropFilter: "blur(12px)",
-      ...extra,
-    }),
-    label: () => ({ fontWeight: 900, marginBottom: 8, fontSize: 13, color: theme.subtext }),
-    hLabel: () => ({ fontWeight: 950, fontSize: 14, marginBottom: 10, color: theme.text, letterSpacing: -0.2 }),
-    softCard: () => ({
-      border: `1px solid ${theme.border}`,
-      background: theme.glass2,
-      borderRadius: 16,
-      padding: 12,
-      backdropFilter: "blur(12px)",
-    }),
-    row: () => ({
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 10,
-      padding: "10px 12px",
-      borderRadius: 12,
-      border: `1px solid ${theme.border}`,
-      background: theme.glass2,
-      backdropFilter: "blur(12px)",
-    }),
-    dropzone: () => ({
-      border: `1px dashed ${theme.border}`,
-      borderRadius: 12,
-      padding: "10px 12px",
-      color: theme.subtext,
-      background: theme.glass2,
-      backdropFilter: "blur(12px)",
-    }),
-    msg: (text) => ({
-      color: text?.includes("Saved") ? "rgba(120,255,196,.92)" : text ? "rgba(255,120,120,.92)" : "transparent",
-      fontWeight: 900,
-      minHeight: 20,
-      alignSelf: "center",
-    }),
-    badge: (tone) => ({
-      padding: "6px 10px",
-      borderRadius: 12,
-      border: `1px solid ${tone === "good" ? "rgba(120,255,196,.35)" : tone === "bad" ? "rgba(255,120,120,.35)" : theme.border}`,
-      background: theme.glass2,
-      fontWeight: 900,
-      color: theme.text,
-      backdropFilter: "blur(12px)",
-    }),
-  };
-}
+return {
+  btn: (opts = {}) => {
+    const {
+      weight = 800,
+      glow = false,
+      disabled = false,
+      tone = "neutral",
+      icon = false,
+      size = "md",
+    } = opts;
 
+    const pad =
+      size === "sm"
+        ? icon
+          ? "7px 9px"
+          : "7px 10px"
+        : icon
+          ? "10px 12px"
+          : baseBtn.padding;
+
+    const fontSize = size === "sm" ? 13 : 14;
+
+    return {
+      ...baseBtn,
+      fontWeight: weight,
+      fontSize,
+      opacity: disabled ? 0.65 : 1,
+      cursor: disabled ? "not-allowed" : "pointer",
+      padding: pad,
+      borderColor: glow ? theme.accentSoft : toneBorder(tone),
+      boxShadow: glow ? `0 16px 44px ${theme.accentSoft}` : theme.shadow2,
+    };
+  },
+
+  iconBtn: () => ({
+    ...baseBtn,
+    padding: "8px 10px",
+    fontSize: 13,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 38,
+    boxShadow: "none",
+    background: theme.glass2,
+  }),
+
+  input: (extra = {}) => ({
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid " + theme.border,
+    background: theme.glass2,
+    color: theme.text,
+    outline: "none",
+    boxShadow: "none",
+    backdropFilter: "blur(12px)",
+    transition: "border-color .12s ease, box-shadow .12s ease",
+    ...extra,
+  }),
+
+  textarea: (extra = {}) => ({
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid " + theme.border,
+    background: theme.glass2,
+    color: theme.text,
+    outline: "none",
+    resize: "vertical",
+    boxShadow: "none",
+    backdropFilter: "blur(12px)",
+    ...extra,
+  }),
+
+  label: () => ({
+    fontWeight: 900,
+    marginBottom: 8,
+    fontSize: 13,
+    color: theme.subtext,
+  }),
+
+  hLabel: () => ({
+    fontWeight: 950,
+    fontSize: 14,
+    marginBottom: 10,
+    color: theme.text,
+    letterSpacing: -0.2,
+  }),
+
+  softCard: () => ({
+    border: "1px solid " + theme.border,
+    background: theme.glass2,
+    borderRadius: 16,
+    padding: 12,
+    backdropFilter: "blur(12px)",
+  }),
+
+  row: () => ({
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid " + theme.border,
+    background: theme.glass2,
+    backdropFilter: "blur(12px)",
+  }),
+
+  dropzone: () => ({
+    border: "1px dashed " + theme.border,
+    borderRadius: 12,
+    padding: "10px 12px",
+    color: theme.subtext,
+    background: theme.glass2,
+    backdropFilter: "blur(12px)",
+  }),
+
+  msg: (text) => ({
+    color: text?.includes("Saved")
+      ? "rgba(120,255,196,.92)"
+      : text
+        ? "rgba(255,120,120,.92)"
+        : "transparent",
+    fontWeight: 900,
+    minHeight: 20,
+    alignSelf: "center",
+  }),
+
+  badge: (tone) => ({
+    padding: "6px 10px",
+    borderRadius: 12,
+    border:
+      "1px solid " +
+      (tone === "good"
+        ? "rgba(120,255,196,.35)"
+        : tone === "bad"
+          ? "rgba(255,120,120,.35)"
+          : theme.border),
+    background: theme.glass2,
+    fontWeight: 900,
+    color: theme.text,
+    backdropFilter: "blur(12px)",
+  }),
+};
+}
 /* ----------------------------
    COMPONENTS
 ---------------------------- */
@@ -2035,134 +2090,54 @@ function Segment({ value, onChange, options, ui }) {
   );
 }
 
-
-function QuickFacts({ theme, breed }) {
-  const facts = [
-    ["Origin", breed?.origin || breed?.Origin || "—"],
-    ["Lifespan", breed?.lifespan || "—"],
-    ["Group", breed?.group || "—"],
-    ["Size", breed?.size || breed?.height_weight || "—"],
-    ["Beginner friendly", breed?.beginner_friendly ? "Yes" : "No"],
-  ];
-
-  return (
-    <div
-      style={{
-        border: `1px solid ${theme.border}`,
-        borderRadius: 18,
-        padding: 14,
-        background: "rgba(255,255,255,.04)",
-        boxShadow: theme.shadow2,
-        backdropFilter: "blur(14px)",
-      }}
-    >
-      <div style={{ fontWeight: 950, marginBottom: 10, letterSpacing: -0.2 }}>Quick Facts</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {facts.map(([k, v]) => (
-          <div key={k} style={{ display: "flex", gap: 10 }}>
-            <div style={{ width: 130, color: theme.subtext, fontWeight: 850 }}>{k}</div>
-            <div style={{ color: theme.text, fontWeight: 750, overflowWrap: "anywhere" }}>{String(v)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function GridCard({ theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav, onNeedResolve }) {
-  const subtitle =
-    (breed.temperament && String(breed.temperament)) ||
-    (breed.origin && `Origin: ${breed.origin}`) ||
-    ((breed.breed_tags ?? []).slice(0, 2).map((t) => t.tag).join(" • ")) ||
-    "";
-
-  const miniTags = (breed.breed_tags ?? []).slice(0, 2).map((t) => t.tag);
-
   return (
     <div
-      className="lux-gridcard"
       onClick={onClick}
       title="Open"
       style={{
-        borderRadius: 22,
+        borderRadius: 20,
         overflow: "hidden",
-        border: `1px solid ${theme.border}`,
+        border: "1px solid " + theme.border,
         background: "rgba(255,255,255,.04)",
         boxShadow: theme.shadow2,
         cursor: "pointer",
         backdropFilter: "blur(14px)",
-        transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease",
+        transition: "transform .12s ease, box-shadow .12s ease",
       }}
       onMouseEnter={onNeedResolve}
     >
-      <div style={{ height: 170, background: darkMode ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.35)" }}>
+      <div style={{ height: 150, background: darkMode ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.35)" }}>
         {breed.image_url ? (
-          <img
-            src={imgSrc || ""}
-            alt={breed.name}
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            loading="lazy"
-          />
+          <img src={imgSrc || ""} alt={breed.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         ) : (
-          <div style={{ height: "100%", display: "grid", placeItems: "center", color: theme.subtext }}>
-            <div style={{ opacity: 0.9, fontWeight: 900 }}>No image</div>
-          </div>
+          <div style={{ padding: 14, color: theme.subtext }}>No image</div>
         )}
       </div>
 
-      <div style={{ padding: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 980, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {breed.name}
-          </div>
-
-          <button
-            onClick={onToggleFav}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontSize: 18,
-              color: theme.text,
-              padding: 8,
-              borderRadius: 12,
-            }}
-            title={isFav ? "Unfavorite" : "Favorite"}
-          >
-            {isFav ? "⭐" : "☆"}
-          </button>
+      <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <div style={{ fontWeight: 950, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {breed.name}
         </div>
-
-        {subtitle ? (
-          <div
-            style={{
-              marginTop: 6,
-              color: theme.subtext,
-              fontSize: 12,
-              fontWeight: 750,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {subtitle}
-          </div>
-        ) : null}
-
-        {miniTags.length ? (
-          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {miniTags.map((t) => (
-              <span key={t} className="lux-chip" style={{ padding: "6px 9px" }}>
-                🏷️ {t}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        <button
+          onClick={onToggleFav}
+          style={{
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            fontSize: 18,
+            color: theme.text,
+            padding: 8,
+            borderRadius: 12,
+          }}
+          title={isFav ? "Unfavorite" : "Favorite"}
+        >
+          {isFav ? "⭐" : "☆"}
+        </button>
       </div>
     </div>
   );
 }
-
 
 function Modal({ title, subtitle, children, onClose, ui }) {
   useEffect(() => {
@@ -2341,19 +2316,44 @@ function BreedImagePreview({ rawUrl, resolveImageSrc, theme }) {
 
   if (!rawUrl) return null;
 
-  return (
-    <div style={{ marginTop: 10, borderRadius: 16, overflow: "hidden", border: `1px solid ${theme.border}`, background: theme.glass2, backdropFilter: "blur(12px)" }}>
+  return (  
+    <div
+      style={{
+        marginTop: 10,
+        borderRadius: 16,
+        border: "1px solid " + theme.border,
+        background: theme.glass2,
+        backdropFilter: "blur(12px)",
+        padding: 10,
+        display: "inline-block",
+      }}
+    >
       {src ? (
-        <img src={src} alt="Preview" style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
+        <img
+          src={src}
+          alt="Preview"
+          style={{ width: "100%", 
+            height: "220px", 
+            objectFit: "cover", display: "block" }}
+        />
       ) : (
         <div style={{ padding: 12, opacity: 0.85 }}>Preview loading…</div>
       )}
-      
-      
+      <footer
+  style={{
+    marginTop: 80,
+    padding: "32px 0",
+    textAlign: "center",
+    opacity: 0.5,
+    fontSize: 13,
+    letterSpacing: ".08em",
+  }}
+>
+  © {new Date().getFullYear()} Made by Immaline Peters. All rights reserved.
+</footer>
     </div>
   );
 }
-
 /* ----------------------------
    UTIL
 ---------------------------- */
