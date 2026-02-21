@@ -1423,11 +1423,6 @@ const { data, error } = await supabase
                     </div>
 
                     <div>
-                      <div style={ui.label()}>Lifespan</div>
-                      <input value={breedForm.lifespan} onChange={(e) => setBreedForm((p) => ({ ...p, lifespan: e.target.value }))} style={ui.input()} />
-                    </div>
-
-                    <div>
                       <div style={ui.label()}>Group</div>
                       <input value={breedForm.group} onChange={(e) => setBreedForm((p) => ({ ...p, group: e.target.value }))} style={ui.input()} />
                     </div>
@@ -1440,11 +1435,6 @@ const { data, error } = await supabase
                     <div>
                       <div style={ui.label()}>Proper Name</div>
                       <input value={breedForm.proper_name} onChange={(e) => setBreedForm((p) => ({ ...p, proper_name: e.target.value }))} style={ui.input()} />
-                    </div>
-
-                    <div>
-                      <div style={ui.label()}>Size</div>
-                      <input value={breedForm.size} onChange={(e) => setBreedForm((p) => ({ ...p, size: e.target.value }))} style={ui.input()} />
                     </div>
 
                     <div style={{ gridColumn: "span 2" }}>
