@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { supabase } from "./supabase";
 import "./App.css";
 
@@ -1785,6 +1786,7 @@ const { data, error } = await supabase
           </div>
         </Modal>
       )}
+      <Analytics />
     </div>
   );
 }
