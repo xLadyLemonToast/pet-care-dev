@@ -604,12 +604,28 @@ const sortedBreeds = useMemo(() => {
     const af = favorites.has(a.id) ? 0 : 1;
     const bf = favorites.has(b.id) ? 0 : 1;
     if (af !== bf) return af - bf;
-
     return (a.name ?? "").localeCompare(b.name ?? "");
   });
 
-  return arr;
+   return arr;
 }, [tagFilteredBreeds, favorites]);
+
+useEffect(() => {
+  if (viewMode !== "grid") return;
+  if (!petTypeId) return;
+
+  const toPrime = sortedBreeds.slice(0, 24);
+
+  toPrime.forEach((b) => {
+    const raw = b?.image_url;
+    if (!raw) return;
+    if (imageSrcCache[raw]) return;
+
+    resolveImageSrc(raw).then((resolved) => {
+      if (resolved) setImageSrcCache((p) => ({ ...p, [raw]: resolved }));
+    });
+  });
+}, [viewMode, petTypeId, sortedBreeds, imageSrcCache]);
 
   function toggleFavorite(id) {
     setFavorites((prev) => {
@@ -2133,7 +2149,7 @@ function GridCard({ theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav,
             src={imgSrc || ""}
             alt={breed.name}
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            loading="lazy"
+            loading="eager"
           />
         ) : (
           <div style={{ height: "100%", display: "grid", placeItems: "center", color: theme.subtext }}>

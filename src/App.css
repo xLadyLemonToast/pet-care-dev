@@ -25,7 +25,7 @@
 
 /* ---------- GLASS CARD ---------- */
 .lux-card{
-  position: relative;
+  position: relative; z-index: 3;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,.12);
   background: rgba(255,255,255,.06);
@@ -34,6 +34,7 @@
 }
 
 .lux-card__inner{
+  position: relative; z-index: 3;
   padding: 16px;
   border-radius: 18px;
   background: rgba(255,255,255,.05);
@@ -195,18 +196,17 @@ body.light textarea{
   position: fixed;
   inset: 0;
   pointer-events: none;
-
   z-index: 2;
 
-  opacity: 0.65;
-  mix-blend-mode: normal; /* IMPORTANT: stop multiply from dulling it */
+  opacity: 0.55;
+  mix-blend-mode: normal;
 
   background:
-    radial-gradient(circle, rgba(200,167,90,0.85) 0 2px, transparent 4px) 0 0 / 120px 120px,
-    radial-gradient(circle, rgba(200,167,90,0.55) 0 2px, transparent 4px) 50px 80px / 180px 180px,
-    radial-gradient(circle, rgba(200,167,90,0.35) 0 2px, transparent 4px) 100px 40px / 240px 240px;
+    radial-gradient(circle, rgba(200,167,90,0.75) 0 1.6px, transparent 3.6px) 0 0 / 140px 140px,
+    radial-gradient(circle, rgba(200,167,90,0.40) 0 1.6px, transparent 3.6px) 50px 80px / 220px 220px,
+    radial-gradient(circle, rgba(200,167,90,0.25) 0 1.6px, transparent 3.6px) 100px 40px / 280px 280px;
 
-  animation: pollen-drift 5s linear infinite;
+  animation: pollen-drift 20s linear infinite;
   filter: none;
 }
 
