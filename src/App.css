@@ -2,6 +2,8 @@
   max-width: 1120px;
   margin: 0 auto;
   padding: 28px;
+  position: relative;
+  z-index: 1;
 }
 
 /* ---------- APP SHELL ---------- */
@@ -18,70 +20,74 @@
   background:
     radial-gradient(520px 520px at var(--lux-x) var(--lux-y), rgba(214,179,106,.12) 0%, transparent 60%),
     radial-gradient(760px 520px at calc(var(--lux-x) + 220px) calc(var(--lux-y) + 160px), rgba(255,255,255,.05) 0%, transparent 70%);
-  mix-blend-mode: screen;
-  opacity: .9;
+  mix-blend-mode: soft-light;
 }
 
-/* Sticky top bar */
-.lux-topbar{
-  position: sticky;
-  top: 18px;
-  z-index: 20;
-
-  padding: 14px 14px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: rgba(18,20,28,.55);
-  backdrop-filter: blur(14px);
-
-  box-shadow:
-    0 18px 60px rgba(0,0,0,.35),
-    inset 0 1px 0 rgba(255,255,255,.04);
-}
-
-/* ---------- LUX CARDS ---------- */
+/* ---------- GLASS CARD ---------- */
 .lux-card{
-  border-radius: 16px;
-  padding: 14px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  box-shadow:
-    0 18px 60px rgba(0,0,0,.28),
-    inset 0 1px 0 rgba(255,255,255,.035);
-  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
-}
-
-.lux-card:hover{
-  transform: translateY(-2px);
-  border-color: rgba(214,179,106,.24);
-  box-shadow:
-    0 26px 80px rgba(0,0,0,.32),
-    0 0 0 1px rgba(214,179,106,.12),
-    inset 0 1px 0 rgba(255,255,255,.04);
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  box-shadow: 0 20px 50px rgba(0,0,0,.25);
+  overflow: hidden;
 }
 
 .lux-card__inner{
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.03);
-  padding: 12px;
-}
-
-/* Chips */
-.lux-chip{
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.10);
+  padding: 16px;
+  border-radius: 18px;
   background: rgba(255,255,255,.05);
-  color: rgba(255,255,255,.72);
-  font-size: 12px;
+  backdrop-filter: blur(18px);
 }
 
-/* Segment control */
+/* ---------- TOP BAR / HEADER ---------- */
+.lux-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+
+.lux-brand{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  font-weight: 950;
+  letter-spacing: .02em;
+  opacity: .9;
+}
+
+.lux-top-actions{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+
+/* ---------- CONTROLS ---------- */
+.lux-controls{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 900px){
+  .lux-controls{
+    grid-template-columns: 1fr;
+  }
+}
+
+.lux-label{
+  font-weight: 900;
+  letter-spacing: .02em;
+  opacity: .92;
+  margin-bottom: 8px;
+}
+
+/* Segment toggle */
 .lux-segment{
   display:inline-flex;
   gap: 6px;
@@ -113,60 +119,15 @@ input::placeholder{
 .lux-footer {
   margin-top: 60px;
   padding: 24px 0;
-
   text-align: center;
   font-size: 13px;
   letter-spacing: .08em;
-
   color: rgba(255,255,255,.35);
-
-  border-top: 1px solid rgba(255,255,255,.06);
+  border-top: 1px solid rgba(255,255,255,.10);
 }
-
-/* ---------- GRID CARDS ---------- */
-.lux-gridcard:hover{
-  transform: translateY(-3px);
-  border-color: rgba(214,179,106,.22);
-  box-shadow:
-    0 26px 80px rgba(0,0,0,.32),
-    0 0 0 1px rgba(214,179,106,.10),
-    inset 0 1px 0 rgba(255,255,255,.04);
-}
-
-/* ---------- TOPBAR ACTIONS (optional) ---------- */
-.lux-topbar .lux-actions{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  align-items:flex-end;
-  min-width: 320px;
-}
-.lux-topbar .lux-actions__row{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  flex-wrap:wrap;
-  justify-content:flex-end;
-}
-/* ---------- LIGHT MODE CONTRAST PATCH ---------- */
-/* ---------- LIGHT MODE TOPBAR (FAE LIGHT) ---------- */
-/* Make card borders/shadows use the softer light palette when in light mode */
-/* Chips/segment containers feel less "dark glass" in light mode */
-/* Assumes you toggle a class like .light on body/app root.
-   If yours is different (e.g., .lux-light), replace selectors accordingly. */
-
-   /* -----------------
-   LIGHT BODY STYLE
------------------ */
-/* Stop the "flashlight" overlay in light mode */
-/* Top bar override */
-/* Cards: soften borders + make inner not “dark glass” */
-/* Text + chips + segments */
-/* Inputs/selects (your dropdowns) */
 
 /* =========================
-   FOREST FAE LIGHT MODE
-   (single source of truth)
+   LIGHT MODE (source of truth)
 ========================= */
 
 html, body { min-height: 100%; }
@@ -178,63 +139,47 @@ body.light{
   --shadow-soft: 0 12px 30px rgba(108, 140, 108, 0.18);
   --text-primary: rgba(47, 62, 47, 0.92);
   --accent-gold: #c8a75a;
+
   color: var(--text-primary);
-  /* Smooth, band-free background */
+
+  /* Smooth, band-free background + stronger gold wash */
   background:
-    /* warm sun-dust from above */
-    radial-gradient(1400px 900px at 25% 18%, rgba(255,240,210,0.12), transparent 70%),
-
-    /* cool leaf shade pooling */
+    radial-gradient(1200px 700px at 15% 20%, rgba(200,167,90,0.18), transparent 70%),
+    radial-gradient(900px 600px at 85% 15%, rgba(200,167,90,0.12), transparent 70%),
+    radial-gradient(1400px 900px at 25% 18%, rgba(255,240,210,0.10), transparent 70%),
     radial-gradient(1200px 900px at 80% 80%, rgba(120,160,120,0.12), transparent 78%),
-
-    /* faint moss shadow at very bottom edge (not mid-screen) */
     radial-gradient(1100px 700px at 50% 115%, rgba(0,0,0,0.05), transparent 58%),
+    var(--bg-main) !important;
 
-    /* base */
-    var(--bg-main);
+  background-color: var(--bg-main) !important;
 
-  background-color: var(--bg-main);
+  /* critical: prevents the “halfway band” from old vignettes */
+  box-shadow: none !important;
 }
 
-/* Light mode: disable flashlight overlay */
-body.light .lux-glow{
-  mix-blend-mode: normal;
-  opacity: 0.08;
-  filter: blur(2px);
-}
-
-/* Topbar */
-body.light .lux-topbar{
-  background: rgba(108, 137, 88, 0.72);
+/* Light cards */
+body.light .lux-card{
+  background: var(--bg-glass);
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
 }
 
-/* Cards */
-body.light .lux-card{
-  background: var(--bg-glass);
-  border-color: var(--border-soft);
-  box-shadow: var(--shadow-soft);
-}
 body.light .lux-card__inner{
-  background: rgba(235, 245, 235, 0.65);
-  border-color: rgba(108, 140, 108, 0.16);
+  background: rgba(255,255,255,.40);
 }
 
-/* Chips + Segments */
-body.light .lux-chip,
-body.light .lux-segment{
-  background: rgba(255,255,255,.70);
-  border-color: rgba(108, 140, 108, 0.20);
+/* Light buttons + selects */
+body.light button{
+  border: 1px solid rgba(108, 140, 108, 0.20);
   color: rgba(47, 62, 47, 0.88);
 }
 
-/* Active segment pollen */
+/* Active segment pollen (stronger + visible) */
 body.light .lux-segment button[aria-pressed="true"],
 body.light .lux-segment button.active{
-  background: rgba(200, 167, 90, 0.20);
-  border-color: rgba(200, 167, 90, 0.40);
-  box-shadow: 0 0 0 1px rgba(200, 167, 90, 0.20);
+  background: rgba(200, 167, 90, 0.22) !important;
+  border-color: rgba(200, 167, 90, 0.60) !important;
+  box-shadow: 0 0 18px rgba(200, 167, 90, 0.35) !important;
 }
 
 /* Inputs */
@@ -245,41 +190,91 @@ body.light textarea{
   border: 1px solid rgba(108, 140, 108, 0.22);
   color: rgba(47, 62, 47, 0.92);
 }
-body.light input::placeholder{
-  color: rgba(47, 62, 47, 0.55);
+/* Pollen layer: above backgrounds, below UI */
+.pollen-layer{
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+
+  z-index: 2;
+
+  opacity: 0.65;
+  mix-blend-mode: normal; /* IMPORTANT: stop multiply from dulling it */
+
+  background:
+    radial-gradient(circle, rgba(200,167,90,0.85) 0 2px, transparent 4px) 0 0 / 120px 120px,
+    radial-gradient(circle, rgba(200,167,90,0.55) 0 2px, transparent 4px) 50px 80px / 180px 180px,
+    radial-gradient(circle, rgba(200,167,90,0.35) 0 2px, transparent 4px) 100px 40px / 240px 240px;
+
+  animation: pollen-drift 5s linear infinite;
+  filter: none;
 }
 
-/* Headings */
-body.light h1,
-body.light h2{
-  color: rgba(26, 44, 26, 0.96);
-  text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+@keyframes pollen-drift{
+  0%   { transform: translate3d(0,0,0); }
+  50%  { transform: translate3d(-10px,14px,0); }
+  100% { transform: translate3d(-22px,30px,0); }
 }
+
 /* =========================
-   LIGHT MODE: GLOW WITHOUT THE BAR
+   Pollen + Golden Edge Light
 ========================= */
 
-body.light .lux-glow{
-  opacity: 0.20;               /* overall strength */
-  mix-blend-mode: soft-light;  /* prevents harsh contrast edges */
-  filter: blur(22px);
-
-  /* 1) Ambient “sun through leaves” (fixed position, no split)
-     2) Tiny cursor halo (subtle, doesn’t create a band)
-  */
-  background:
-    radial-gradient(1400px 900px at 25% 18%, rgba(255,240,210,0.12), transparent 70%),
-    radial-gradient(1200px 900px at 80% 80%, rgba(120,160,120,0.12), transparent 78%),
-    radial-gradient(1100px 700px at 50% 115%, rgba(0,0,0,0.05), transparent 58%),
-    var(--bg-main) !important;
-  background-color: var(--bg-main) !important;
-  box-shadow: none !important;
-
+body.light{
+  position: relative;
 }
 
-/* ==== BAND KILL SWITCH (LIGHT) ==== */
-body.light{
-  background: var(--bg-main) !important;
-  background-color: var(--bg-main) !important;
-  box-shadow: none !important;
+/* Pollen layer (this MUST have content/position to render) */
+body.light::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.42;
+  mix-blend-mode: soft-light;
+  background:
+    radial-gradient(circle, rgba(200,167,90,0.60) 0 1.2px, transparent 3px) 0 0 / 160px 160px,
+    radial-gradient(circle, rgba(200,167,90,0.35) 0 1.2px, transparent 3px) 40px 70px / 220px 220px,
+    radial-gradient(circle, rgba(200,167,90,0.25) 0 1.2px, transparent 3px) 90px 30px / 260px 260px;
+  animation: fae-drift 18s linear infinite;
+}
+
+/* Subtle golden edge light */
+body.light::after{
+  content:"";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(200,167,90,0.25), transparent 60%),
+    radial-gradient(circle at 50% 100%, rgba(200,167,90,0.15), transparent 70%);
+}
+
+/* gentle drift */
+@keyframes fae-drift{
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(-12px, 18px, 0); }
+  100% { transform: translate3d(-24px, 36px, 0); }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  body.light::before{
+    animation: none;
+  }
+}
+
+/* =========================
+   DARK MODE (kept minimal)
+========================= */
+
+body:not(.light){
+  color: rgba(255,255,255,.92);
+  background:
+    radial-gradient(1200px 900px at 25% 18%, rgba(122,162,255,0.12), transparent 70%),
+    radial-gradient(1100px 700px at 60% 115%, rgba(0,0,0,0.35), transparent 58%),
+    radial-gradient(900px 600px at 80% 35%, rgba(214,179,106,0.08), transparent 70%),
+    #0b0f14;
 }

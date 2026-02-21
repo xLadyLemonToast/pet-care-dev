@@ -1052,7 +1052,9 @@ const { data, error } = await supabase
       {/* Cursor glow */}
       <div aria-hidden="true" className="lux-glow" />
 
-
+      {/* Pollen Layer*/}
+      <div className="pollen-layer" aria-hidden="true" />
+     
       {/* Toast */}
       <div
         style={{
@@ -1113,7 +1115,7 @@ const { data, error } = await supabase
       color: theme.subtext,
       
     }}>
-      🐾 ZooDB
+      🐾 Zoo Database
     </div>
 
     <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -1151,7 +1153,8 @@ const { data, error } = await supabase
   </div>
 
   {/* HERO TITLE */}
-  <div style={{ textAlign: "center", marginBottom: 36 }}>
+  <div style={{ textAlign: "center", marginBottom: 36, background: "radial-gradient(circle, rgba(255,230,180,0.12), transparent 70%)",
+ }}>
     <h1
       style={{
         margin: 0,
@@ -2028,26 +2031,37 @@ function Chip({ children }) {
 function Segment({ value, onChange, options, ui }) {
   return (
     <div className="lux-segment">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => !o.disabled && onChange(o.value)}
-          disabled={o.disabled}
-          title={o.title || ""}
-          style={{
-            ...ui.btn({
-              weight: value === o.value ? 950 : 850,
-              disabled: !!o.disabled,
-              glow: value === o.value,
-            }),
-            padding: "8px 10px",
-            boxShadow: "none",
-            background: value === o.value ? "rgba(122,162,255,.14)" : "rgba(255,255,255,.05)",
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
+      {options.map((o) => {
+        const active = value === o.value;
+
+        return (
+          <button
+            key={o.value}
+            onClick={() => !o.disabled && onChange(o.value)}
+            disabled={o.disabled}
+            title={o.title || ""}
+
+            // ✅ lets CSS target the active state
+            aria-pressed={active}
+            className={active ? "active" : ""}
+            type="button"
+            style={{
+              ...ui.btn({
+                weight: active ? 950 : 850,
+                disabled: !!o.disabled,
+                glow: active,
+              }),
+              padding: "8px 10px",
+              boxShadow: "none",
+
+              // ✅ IMPORTANT: stop inline background from overriding your gold CSS
+              background: "transparent",
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
