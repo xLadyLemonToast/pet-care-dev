@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { createPortal } from "react-dom";
 import "./App.css";
+
 
 /**
  * CLEAN WORKING APP.JSX
@@ -162,6 +164,7 @@ async function logout() {
     height_weight: "",
     group: "",
     origin: "",
+    proper_name: ""
   });
   
   // NEW: tags for the selected breed
@@ -553,8 +556,8 @@ async function saveBreedTags(breedId, tags) {
   const cardTone = useMemo(() => {
     const tones = {
       "Height & Weight": { tint: "rgba(102,179,255,.14)", border: "rgba(102,179,255,.28)" },
-      Lifespan: { tint: "rgba(122,162,255,.12)", border: "rgba(122,162,255,.26)" },
-      Size: { tint: "rgba(180,180,200,.12)", border: "rgba(180,180,200,.24)" },
+        Lifespan: { tint: "rgba(122,162,255,.12)", border: "rgba(122,162,255,.26)" },
+        Size: { tint: "rgba(180,180,200,.12)", border: "rgba(180,180,200,.24)" },
       "Care Instructions": { tint: "rgba(120,255,196,.12)", border: "rgba(120,255,196,.26)" },
       "Dietary Needs": { tint: "rgba(255,191,102,.14)", border: "rgba(255,191,102,.28)" },
       "Exercise Needs": { tint: "rgba(180,120,255,.12)", border: "rgba(180,120,255,.26)" },
@@ -708,6 +711,7 @@ const sortedBreeds = useMemo(() => {
       height_weight: "",
       group: "",
       origin: "",
+      proper_name: "",
     });
     setBreedTags([]);
     setTagInput("");
@@ -726,6 +730,7 @@ function loadBreedIntoForm(b) {
     height_weight: b.height_weight ?? "",
     group: b.group ?? "",
     origin: b.origin ?? "",
+    proper_name: b.proper_name ?? "",
   });
 
   // ✅ Load tags into form (NEW)
@@ -754,6 +759,7 @@ function loadBreedIntoForm(b) {
       origin: breedForm.origin?.trim() || null,
       size: breedForm.size?.trim() || null,
       height_weight: breedForm.height_weight?.trim() || null,
+      proper_name: breedForm.proper_name?.trim() || null,
     };
 
 const { data, error } = await supabase
@@ -1219,7 +1225,7 @@ const { data, error } = await supabase
           {/* GRID VIEW */}
           {viewMode === "grid" && petTypeId && (
             <div style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ position: "relative", zIndex: 999999, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ color: theme.subtext }}>
                   Showing <b>{sortedBreeds.length}</b> breed(s)
                 </div>
@@ -1429,6 +1435,11 @@ const { data, error } = await supabase
                     <div>
                       <div style={ui.label()}>Origin</div>
                       <input value={breedForm.origin} onChange={(e) => setBreedForm((p) => ({ ...p, origin: e.target.value }))} style={ui.input()} />
+                    </div>
+
+                    <div>
+                      <div style={ui.label()}>Proper Name</div>
+                      <input value={breedForm.proper_name} onChange={(e) => setBreedForm((p) => ({ ...p, proper_name: e.target.value }))} style={ui.input()} />
                     </div>
 
                     <div>
@@ -2042,6 +2053,7 @@ function QuickFacts({ theme, breed }) {
     ["Lifespan", breed?.lifespan || "—"],
     ["Group", breed?.group || "—"],
     ["Size", breed?.size || breed?.height_weight || "—"],
+    ["Proper Name", breed?.proper_name || "—"],
     ["Beginner friendly", breed?.beginner_friendly ? "Yes" : "No"],
   ];
 
@@ -2179,7 +2191,7 @@ function Modal({ title, subtitle, children, onClose, ui }) {
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 60,
+        zIndex: 1,
         background: "rgba(0,0,0,.55)",
         display: "grid",
         placeItems: "center",
@@ -2264,14 +2276,24 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
         <span style={{ opacity: 0.75 }}>{open ? "▲" : "▼"}</span>
       </button>
 
-      {open && !disabled && (
+{open && !disabled &&
+  createPortal(
+    (() => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (!r) return null;
+
+      const width = r.width;
+      const left = r.left + window.scrollX;
+      const top = r.bottom + window.scrollY + 8;
+
+      return (
         <div
           style={{
             position: "absolute",
-            left: 0,
-            right: 0,
-            top: "calc(100% + 8px)",
-            zIndex: 9999,
+            left,
+            top,
+            width,
+            zIndex: 999999,
             borderRadius: 16,
             border: "1px solid rgba(255,255,255,.14)",
             background: "rgba(16,22,44,.72)",
@@ -2279,9 +2301,7 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
             backdropFilter: "blur(16px)",
             overflow: "hidden",
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
-          }}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <div style={{ padding: 10 }}>
             <input
@@ -2295,6 +2315,7 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
               }}
             />
           </div>
+
           <div style={{ maxHeight: 260, overflowY: "auto" }}>
             {filtered.length ? (
               filtered.map((it) => (
@@ -2320,11 +2341,13 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
             )}
           </div>
         </div>
-      )}
+      );
+    })(),
+    document.body
+  )}
     </div>
   );
 }
-
 function BreedImagePreview({ rawUrl, resolveImageSrc, theme }) {
   const [src, setSrc] = useState("");
 
