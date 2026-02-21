@@ -1214,6 +1214,7 @@ const { data, error } = await supabase
           <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <GlassCard>
               <div style={ui.hLabel()}>Pet Type</div>
+              
               <ComboBox
                 ui={ui}
                 value={petTypeId}
@@ -1228,9 +1229,9 @@ const { data, error } = await supabase
 
 
               <div style={{marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={() => setSelectedBreed(null)} style={ui.btn({ weight: 900 })}>
-                  ← Back to list
-                </button>
+                      <button onClick={refreshCurrentBreed} style={ui.btn({ weight: 900 })}>
+                        🔄 Refresh
+                      </button>
               </div>
             </GlassCard>
 
@@ -1665,6 +1666,10 @@ const { data, error } = await supabase
                         {isFavorite ? "⭐" : "☆"}
                       </button>
 
+                      <button onClick={() => setSelectedBreed(null)} style={ui.btn({ weight: 900 })}>
+                        ← Back to list
+                      </button>
+
                       <button onClick={refreshCurrentBreed} style={ui.btn({ weight: 900 })}>
                         🔄 Refresh
                       </button>
@@ -1876,7 +1881,20 @@ const { data, error } = await supabase
         {sortedBreeds.map((b) => (
           <div
             key={b.id}
-            style={{ ...ui.softCard(), padding: 14, cursor: "pointer" }}
+            style={{
+            ...ui.softCard(),
+            padding: 14,
+            cursor: "pointer",
+            userSelect: "none",
+            transition: "transform .12s ease, box-shadow .12s ease",
+          }}
+          
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-2px)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0px)";
+          }}
             onClick={() => setSelectedBreed(b)}
           >
             <div style={{ fontWeight: 950 }}>{b.proper_name || b.name}</div>
@@ -1891,8 +1909,8 @@ const { data, error } = await supabase
     )}
   </div>
 )}
-        </div>
-      </div>
+</div>
+</div>
       
 
       {/* Login Modal */}
