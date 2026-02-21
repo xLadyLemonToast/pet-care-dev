@@ -44,8 +44,8 @@
   border-radius: 16px;
   padding: 14px;
   border: 1px solid rgba(255,255,255,.09);
-  background: rgba(18,20,28,.46);
-  backdrop-filter: blur(16px);
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
   box-shadow:
     0 18px 60px rgba(0,0,0,.28),
     inset 0 1px 0 rgba(255,255,255,.035);
@@ -147,4 +147,139 @@ input::placeholder{
   align-items:center;
   flex-wrap:wrap;
   justify-content:flex-end;
+}
+/* ---------- LIGHT MODE CONTRAST PATCH ---------- */
+/* ---------- LIGHT MODE TOPBAR (FAE LIGHT) ---------- */
+/* Make card borders/shadows use the softer light palette when in light mode */
+/* Chips/segment containers feel less "dark glass" in light mode */
+/* Assumes you toggle a class like .light on body/app root.
+   If yours is different (e.g., .lux-light), replace selectors accordingly. */
+
+   /* -----------------
+   LIGHT BODY STYLE
+----------------- */
+/* Stop the "flashlight" overlay in light mode */
+/* Top bar override */
+/* Cards: soften borders + make inner not “dark glass” */
+/* Text + chips + segments */
+/* Inputs/selects (your dropdowns) */
+
+/* =========================
+   FOREST FAE LIGHT MODE
+   (single source of truth)
+========================= */
+
+html, body { min-height: 100%; }
+
+body.light{
+  --bg-main: #a8c8a8;
+  --bg-glass: rgba(235, 247, 235, 0.82);
+  --border-soft: rgba(108, 140, 108, 0.22);
+  --shadow-soft: 0 12px 30px rgba(108, 140, 108, 0.18);
+  --text-primary: rgba(47, 62, 47, 0.92);
+  --accent-gold: #c8a75a;
+  color: var(--text-primary);
+  /* Smooth, band-free background */
+  background:
+    /* warm sun-dust from above */
+    radial-gradient(1400px 900px at 25% 18%, rgba(255,240,210,0.12), transparent 70%),
+
+    /* cool leaf shade pooling */
+    radial-gradient(1200px 900px at 80% 80%, rgba(120,160,120,0.12), transparent 78%),
+
+    /* faint moss shadow at very bottom edge (not mid-screen) */
+    radial-gradient(1100px 700px at 50% 115%, rgba(0,0,0,0.05), transparent 58%),
+
+    /* base */
+    var(--bg-main);
+
+  background-color: var(--bg-main);
+}
+
+/* Light mode: disable flashlight overlay */
+body.light .lux-glow{
+  mix-blend-mode: normal;
+  opacity: 0.08;
+  filter: blur(2px);
+}
+
+/* Topbar */
+body.light .lux-topbar{
+  background: rgba(108, 137, 88, 0.72);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Cards */
+body.light .lux-card{
+  background: var(--bg-glass);
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+body.light .lux-card__inner{
+  background: rgba(235, 245, 235, 0.65);
+  border-color: rgba(108, 140, 108, 0.16);
+}
+
+/* Chips + Segments */
+body.light .lux-chip,
+body.light .lux-segment{
+  background: rgba(255,255,255,.70);
+  border-color: rgba(108, 140, 108, 0.20);
+  color: rgba(47, 62, 47, 0.88);
+}
+
+/* Active segment pollen */
+body.light .lux-segment button[aria-pressed="true"],
+body.light .lux-segment button.active{
+  background: rgba(200, 167, 90, 0.20);
+  border-color: rgba(200, 167, 90, 0.40);
+  box-shadow: 0 0 0 1px rgba(200, 167, 90, 0.20);
+}
+
+/* Inputs */
+body.light input,
+body.light select,
+body.light textarea{
+  background: rgba(255,255,255,.75);
+  border: 1px solid rgba(108, 140, 108, 0.22);
+  color: rgba(47, 62, 47, 0.92);
+}
+body.light input::placeholder{
+  color: rgba(47, 62, 47, 0.55);
+}
+
+/* Headings */
+body.light h1,
+body.light h2{
+  color: rgba(26, 44, 26, 0.96);
+  text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+}
+/* =========================
+   LIGHT MODE: GLOW WITHOUT THE BAR
+========================= */
+
+body.light .lux-glow{
+  opacity: 0.20;               /* overall strength */
+  mix-blend-mode: soft-light;  /* prevents harsh contrast edges */
+  filter: blur(22px);
+
+  /* 1) Ambient “sun through leaves” (fixed position, no split)
+     2) Tiny cursor halo (subtle, doesn’t create a band)
+  */
+  background:
+    radial-gradient(1400px 900px at 25% 18%, rgba(255,240,210,0.12), transparent 70%),
+    radial-gradient(1200px 900px at 80% 80%, rgba(120,160,120,0.12), transparent 78%),
+    radial-gradient(1100px 700px at 50% 115%, rgba(0,0,0,0.05), transparent 58%),
+    var(--bg-main) !important;
+  background-color: var(--bg-main) !important;
+  box-shadow: none !important;
+
+}
+
+/* ==== BAND KILL SWITCH (LIGHT) ==== */
+body.light{
+  background: var(--bg-main) !important;
+  background-color: var(--bg-main) !important;
+  box-shadow: none !important;
 }

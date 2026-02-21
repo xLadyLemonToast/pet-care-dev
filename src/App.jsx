@@ -126,6 +126,15 @@ async function logout() {
     }
   });
 
+useEffect(() => {
+  document.body.classList.toggle("dark", darkMode);
+  document.body.classList.toggle("light", !darkMode);
+
+  try {
+    localStorage.setItem("zoo_darkMode", darkMode ? "1" : "0");
+  } catch {}
+}, [darkMode]);
+
   const [favorites, setFavorites] = useState(() => {
     
     try {
@@ -506,8 +515,8 @@ async function saveBreedTags(breedId, tags) {
     if (!darkMode) {
       return {
         mode: "light",
-        bg0: "#f6f5f1",
-        bg1: "#ffffff",
+        bg0: "transparent",
+        bg1: "transparent",
         text: "#0b0c10",
         subtext: "rgba(11,12,16,.70)",
         border: "rgba(11,12,16,.12)",
@@ -629,10 +638,16 @@ const sortedBreeds = useMemo(() => {
       return next;
     });
   }
+  // ----------------------------
+  // Hide Cards (e.g. Size, Lifespan) from main view but keep in admin for editing
+  // ----------------------------
+const HIDE_CARE_CARDS = new Set(["Size", "Lifespan"]);
 
-  function openAllCategories() {
-    setOpenCategoryIds(new Set(categories.map((c) => c.id)));
-  }
+function openAllCategories() {
+  setOpenCategoryIds(
+    new Set(categories.filter((c) => !HIDE_CARE_CARDS.has(c.name)).map((c) => c.id))
+  );
+}
 
   function closeAllCategories() {
     setOpenCategoryIds(new Set());
@@ -1004,7 +1019,6 @@ const { data, error } = await supabase
         color: theme.text,
         fontFamily: "system-ui, Segoe UI, Arial",
         position: "relative",
-        background: theme.bg0,
         overflowX: "hidden",
       }}
     >
@@ -1016,7 +1030,7 @@ const { data, error } = await supabase
           inset: 0,
           zIndex: 0,
           pointerEvents: "none",
-          background: `${calmGradients.a}, ${calmGradients.b}, ${calmGradients.c}, linear-gradient(180deg, ${theme.bg0}, ${theme.bg1})`,
+          background: "transparent",
         }}
       />
 
@@ -1028,10 +1042,10 @@ const { data, error } = await supabase
           inset: 0,
           zIndex: 0,
           pointerEvents: "none",
-          opacity: darkMode ? 0.16 : 0.12,
+          opacity: darkMode ? 0.16 : 0.00,
           backgroundImage:
             "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E\")",
-          mixBlendMode: darkMode ? "overlay" : "multiply",
+          mixBlendMode: darkMode ? "overlay" : "normal",
         }}
       />
 
@@ -1115,12 +1129,12 @@ const { data, error } = await supabase
         <button
           onClick={() => setLoginOpen(true)}
           style={{
-    background: "transparent",
-    border: "none",
-    fontWeight: 700,
-    color: theme.text,
-    cursor: "pointer",
-    opacity: 0.75,
+          background: "transparent",
+          border: "none",
+          fontWeight: 700,
+          color: theme.text,
+          cursor: "pointer",
+          opacity: 0.75,
   }}
         >
           Admin Login
@@ -1663,6 +1677,7 @@ const { data, error } = await supabase
                       </div>
                       
                     )}
+                    
                   <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button onClick={openAllCategories} style={ui.btn()}>
                       Expand all
@@ -1696,9 +1711,11 @@ const { data, error } = await supabase
                 <QuickFacts theme={theme} breed={selectedBreed} />
               </div>
 
-{/* Care Cards */}
-              <div style={{ marginTop: 16 }}>
-                {categories.map((cat) => {
+              {/* Care Cards */}
+                            <div style={{ marginTop: 16 }}>
+              {categories
+                .filter((cat) => !HIDE_CARE_CARDS.has(cat.name))
+                .map((cat) => {
                   const tone = cardTone(cat.name);
                   const isOpen = openCategoryIds.has(cat.id);
                   const content = guidesByCategoryId[cat.id] ?? "";
@@ -1830,7 +1847,6 @@ const { data, error } = await supabase
         </div>
       </div>
       
-  const loginMagicLink = loginWithMagicLink;
 
       {/* Login Modal */}
       {loginOpen && (
