@@ -237,7 +237,7 @@ body.light::before{
     radial-gradient(circle, rgba(200,167,90,0.60) 0 1.2px, transparent 3px) 0 0 / 160px 160px,
     radial-gradient(circle, rgba(200,167,90,0.35) 0 1.2px, transparent 3px) 40px 70px / 220px 220px,
     radial-gradient(circle, rgba(200,167,90,0.25) 0 1.2px, transparent 3px) 90px 30px / 260px 260px;
-  animation: fae-drift 18s linear infinite;
+  animation: fae-drift 10s linear infinite;
 }
 
 /* Subtle golden edge light */

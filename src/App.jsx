@@ -611,7 +611,7 @@ const sortedBreeds = useMemo(() => {
 }, [tagFilteredBreeds, favorites]);
 
 useEffect(() => {
-  if (viewMode !== "grid") return;
+  if (viewMode !== "grid" && viewMode !== "detail") return;
   if (!petTypeId) return;
 
   const toPrime = sortedBreeds.slice(0, 24);
@@ -1226,9 +1226,10 @@ const { data, error } = await supabase
                 }}
               />
 
-              <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={copyShareLink} style={ui.btn({ weight: 900 })}>
-                  🔗 Share Link
+
+              <div style={{marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button onClick={() => setSelectedBreed(null)} style={ui.btn({ weight: 900 })}>
+                  ← Back to list
                 </button>
               </div>
             </GlassCard>
@@ -1860,9 +1861,36 @@ const { data, error } = await supabase
             </>
           )}
 
-          {viewMode === "detail" && !selectedBreed && (
-            <div style={{ marginTop: 22, color: theme.subtext }}>Pick a Pet Type and a Breed to view its care sheet.</div>
-          )}
+{viewMode === "detail" && !selectedBreed && (
+  <div style={{ marginTop: 22 }}>
+    <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 10 }}>
+      Animals ({sortedBreeds.length})
+    </div>
+
+    {sortedBreeds.length === 0 ? (
+      <div style={{ color: theme.subtext }}>
+        No animals loaded yet. Pick a Pet Type (or check your filters).
+      </div>
+    ) : (
+      <div style={{ display: "grid", gap: 10 }}>
+        {sortedBreeds.map((b) => (
+          <div
+            key={b.id}
+            style={{ ...ui.softCard(), padding: 14, cursor: "pointer" }}
+            onClick={() => setSelectedBreed(b)}
+          >
+            <div style={{ fontWeight: 950 }}>{b.proper_name || b.name}</div>
+            {b.scientific_name && (
+              <div style={{ opacity: 0.7, fontStyle: "italic", fontSize: 12, marginTop: 2 }}>
+                {b.scientific_name}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
         </div>
       </div>
       
