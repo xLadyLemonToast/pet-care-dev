@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { createPortal } from "react-dom";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import "./App.css";
 
 
@@ -2381,6 +2382,7 @@ function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disab
     })(),
     document.body
   )}
+      <SpeedInsights />
     </div>
   );
 }
