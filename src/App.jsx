@@ -91,24 +91,39 @@ async function logout() {
   setLoginMsg("");
 }
 
-
   // ----------------------------
   // APP STATE
   // ----------------------------
   const [petTypes, setPetTypes] = useState([]);
   const [breeds, setBreeds] = useState([]);
   const [selectedBreed, setSelectedBreed] = useState(null);
-
+  const [petTypeIdSearch, setPetTypeIdSearch] = useState("");
   const [petTypeId, setPetTypeId] = useState("");
   const [breedId, setBreedId] = useState("");
-
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [categories, setCategories] = useState([]);
   const [guidesByCategoryId, setGuidesByCategoryId] = useState({});
   const [openCategoryIds, setOpenCategoryIds] = useState(new Set());
 
+  // ----------------------------
+  // Add Planner State (NEW) with Reminders + Logs
+  // ----------------------------
+  const [plannerTab, setPlannerTab] = useState("reminders"); // "reminders" | "logs"
+  const [reminders, setReminders] = useState([]);
+  const [logs, setLogs] = useState([]);
+
+  const [newReminderTitle, setNewReminderTitle] = useState("");
+  const [newReminderRepeatDays, setNewReminderRepeatDays] = useState(""); // string for input
+  const [newReminderDueOn, setNewReminderDueOn] = useState(""); // yyyy-mm-dd
+
+  const [newLogKind, setNewLogKind] = useState("notes");
+  const [newLogNote, setNewLogNote] = useState("");
+
   // UX
+  const [menuOpen, setMenuOpen] = useState(false); // Start Menu 
   const [activeTags, setActiveTags] = useState([]);
   const [breedSearch, setBreedSearch] = useState("");
+  const [petSearch, setPetSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
       return localStorage.getItem("zoo_viewMode") || "detail"; // "detail" | "grid" | "admin"
@@ -323,6 +338,116 @@ async function saveBreedTags(breedId, tags) {
       prompt("Copy this link:", link);
     }
   }
+
+  // ----------------------------
+  // LOGGER: add/update/delete reminders + logs for selected breed
+  // ----------------------------
+
+  async function addReminder() {
+  if (!selectedBreed?.id) return;
+  const title = newReminderTitle.trim();
+  if (!title) return;
+
+  const repeatDays = parseInt(newReminderRepeatDays, 10);
+
+  const { data, error } = await supabase
+    .from("breed_reminders")
+    .insert({
+      breed_id: selectedBreed.id,
+      title,
+      due_on: newReminderDueOn || null,
+      repeat_every_days: Number.isFinite(repeatDays) ? repeatDays : null,
+      is_active: true,
+    })
+    .select()
+    .single();
+
+  if (error) return console.error("addReminder", error);
+
+  setReminders((prev) => [data, ...prev]);
+  setNewReminderTitle("");
+  setNewReminderRepeatDays("");
+  setNewReminderDueOn("");
+}
+
+async function toggleReminder(id, isActive) {
+  const { data, error } = await supabase
+    .from("breed_reminders")
+    .update({ is_active: !isActive })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return console.error("toggleReminder", error);
+
+  setReminders((prev) => prev.map((r) => (r.id === id ? data : r)));
+}
+
+async function deleteReminder(id) {
+  const { error } = await supabase.from("breed_reminders").delete().eq("id", id);
+  if (error) return console.error("deleteReminder", error);
+  setReminders((prev) => prev.filter((r) => r.id !== id));
+}
+
+async function addLog() {
+  if (!selectedBreed?.id) return;
+
+  const note = newLogNote.trim();
+
+  const { data, error } = await supabase
+    .from("breed_logs")
+    .insert({
+      breed_id: selectedBreed.id,
+      kind: newLogKind,
+      note: note || null,
+    })
+    .select()
+    .single();
+
+  if (error) return console.error("addLog", error);
+
+  setLogs((prev) => [data, ...prev]);
+  setNewLogKind("notes");
+  setNewLogNote("");
+}
+
+async function deleteLog(id) {
+  const { error } = await supabase.from("breed_logs").delete().eq("id", id);
+  if (error) return console.error("deleteLog", error);
+  setLogs((prev) => prev.filter((l) => l.id !== id));
+}
+
+  // ----------------------------
+  // PLANNER: load reminders + logs for selected breed
+  // ----------------------------
+useEffect(() => {
+  if (!selectedBreed?.id) {
+    setReminders([]);
+    setLogs([]);
+    return;
+  }
+
+  (async () => {
+    const { data: r, error: rErr } = await supabase
+      .from("breed_reminders")
+      .select("*")
+      .eq("breed_id", selectedBreed.id)
+      .order("created_at", { ascending: false });
+
+    if (rErr) console.error("load reminders", rErr);
+    setReminders(r || []);
+
+    const { data: l, error: lErr } = await supabase
+      .from("breed_logs")
+      .select("*")
+      .eq("breed_id", selectedBreed.id)
+      .order("done_at", { ascending: false })
+      .limit(50);
+
+    if (lErr) console.error("load logs", lErr);
+    setLogs(l || []);
+  })();
+}, [selectedBreed?.id]);
 
   // ----------------------------
   // DATA LOADERS
@@ -577,7 +702,7 @@ async function saveBreedTags(breedId, tags) {
   }, []);
 
   // ----------------------------
-  // FAVORITES + GRID
+  // Breeed & pet Search & FAVORITES + GRID
   // ----------------------------
   const searchFilteredBreeds = useMemo(() => {
     const q = breedSearch.trim().toLowerCase();
@@ -587,6 +712,15 @@ async function saveBreedTags(breedId, tags) {
       (b.name ?? "").toLowerCase().includes(q)
     );
   }, [breeds, breedSearch]);
+
+  const filteredPetTypes = useMemo(() => {
+  const q = petSearch.trim().toLowerCase();
+  if (!q) return petTypes;
+
+  return petTypes.filter((p) =>
+    (p.name ?? "").toLowerCase().includes(q)
+  );
+}, [petTypes, petSearch]);
 
 const tagFilteredBreeds = useMemo(() => {
   if (!activeTags.length) return searchFilteredBreeds;
@@ -610,11 +744,15 @@ const sortedBreeds = useMemo(() => {
    return arr;
 }, [tagFilteredBreeds, favorites]);
 
+const visibleBreeds = showFavoritesOnly
+  ? sortedBreeds.filter(b => favorites.has(b.id))
+  : sortedBreeds;
+
 useEffect(() => {
   if (viewMode !== "grid" && viewMode !== "detail") return;
   if (!petTypeId) return;
 
-  const toPrime = sortedBreeds.slice(0, 24);
+  const toPrime = visibleBreeds.slice(0, 24);
 
   toPrime.forEach((b) => {
     const raw = b?.image_url;
@@ -1028,8 +1166,8 @@ const { data, error } = await supabase
   // RENDER
   // ----------------------------
   return (
-    <div
-      className="lux-app"
+  <div
+    className={`lux-app ${selectedBreed ? "mode-detail" : "mode-grid"}`}
       style={{
         minHeight: "100vh",
         color: theme.text,
@@ -1106,7 +1244,7 @@ const { data, error } = await supabase
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* HEADER */}
        {/* HEADER */}
-<header style={{ marginBottom: 48 }}>
+<header style={{ marginBottom: 18 }}>
 
   {/* TOP UTILITY BAR */}
   <div
@@ -1116,7 +1254,7 @@ const { data, error } = await supabase
       alignItems: "center",
       padding: "18px 0",
       borderBottom: `1px solid ${theme.border}`,
-      marginBottom: 36,
+      marginBottom:18,
     }}
   >
     <div style={{ 
@@ -1134,25 +1272,22 @@ const { data, error } = await supabase
       🐾 Zoo Database
     </div>
 
-    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+    <div style={{ position: "relative", display: "flex", gap: 12, alignItems: "center" }}>
       <button
-        onClick={() => setDarkMode(d => !d)}
-        style={ui.btn({ icon: true })}
-        title="Toggle theme"
+        onClick={() => setMenuOpen(v => !v)}
+        style={ui.btn({ weight: 800 })}
       >
-        {darkMode ? "🌙" : "☀️"}
+        ☰
       </button>
-
-      {!user ? (
+      {menuOpen && (
+  <div className="floating-menu">
+    {!user ? (
         <button
           onClick={() => setLoginOpen(true)}
           style={{
-          background: "transparent",
-          border: "none",
-          fontWeight: 700,
-          color: theme.text,
-          cursor: "pointer",
-          opacity: 0.75,
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
   }}
         >
           Admin Login
@@ -1164,7 +1299,38 @@ const { data, error } = await supabase
         >
           Logout
         </button>
-      )}
+      )
+    }  
+    <button onClick={() => { setPlannerTab("reminders"); setMenuOpen(false); }}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+        }}
+      >
+      Planner
+    </button>
+
+    <button onClick={() => { closeAllCategories(); setMenuOpen(false); }}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+        }}
+      >
+      Care
+    </button>
+    
+  </div>
+)}
+
+      <button
+        onClick={() => setDarkMode(d => !d)}
+        style={ui.btn({ icon: true })}
+        title="Toggle theme"
+      >
+        {darkMode ? "🌙" : "☀️"}
+      </button>
     </div>
   </div>
 
@@ -1211,28 +1377,42 @@ const { data, error } = await supabase
 
 </header>
           {/* TOP CONTROLS */}
-          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={{ 
+            marginTop: 10, 
+            display: "grid", 
+            gridTemplateColumns: "1fr 1fr", 
+            rowGap: 6, 
+            columnGap: 16 }}>
             <GlassCard>
               <div style={ui.hLabel()}>Pet Type</div>
               
               <ComboBox
-                ui={ui}
-                value={petTypeId}
-                placeholder="Choose a pet type"
-                items={petTypeItems}
-                onChange={(v) => {
-                  setPetTypeId(v);
-                  setBreedId("");
-                  setSelectedBreed(null);
-                }}
-              />
+            ui={ui}
+              value={petTypeId}
+              placeholder="Choose a pet type"
+              items={filteredPetTypes.map(p => ({
+                value: p.id,
+                label: p.name
+              }))}
+              onChange={(v) => {
+                setPetTypeId(v);
+                setBreedId("");
+                setSelectedBreed(null);
+              }}
+            />
+          <button
+            onClick={() => {
+              setShowFavoritesOnly((v) => !v);
+              setViewMode("grid");
+              window.scrollTo({ top: 0, behavior: "smooth" });
 
+            }}
+            style={ui.btn({ weight: 900, glow: showFavoritesOnly })}
+            title="Show favorites only"
+          >
+            ⭐ {showFavoritesOnly ? "Favorites ON" : "Favorites"}
+          </button>
 
-              <div style={{marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <button onClick={refreshCurrentBreed} style={ui.btn({ weight: 900 })}>
-                        🔄 Refresh
-                      </button>
-              </div>
             </GlassCard>
 
             <GlassCard>
@@ -1259,7 +1439,7 @@ const { data, error } = await supabase
 
           {/* GRID VIEW */}
           {viewMode === "grid" && petTypeId && (
-            <div style={{ marginTop: 18 }}>
+            <div style={{ marginTop: 12}}>
               <div style={{ position: "relative", zIndex: 999999, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ color: theme.subtext }}>
                   Showing <b>{sortedBreeds.length}</b> breed(s)
@@ -1270,8 +1450,8 @@ const { data, error } = await supabase
               </div>
 
               <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
-                {sortedBreeds.map((b) => (
-                  <GridCard
+            {visibleBreeds.map((b) => (
+                    <GridCard
                     key={b.id}
                     ui={ui}
                     theme={theme}
@@ -1298,6 +1478,7 @@ const { data, error } = await supabase
                       }
                     }}
                   />
+                  
                 ))}
               </div>
             </div>
@@ -1658,6 +1839,7 @@ const { data, error } = await supabase
                     </div>
 
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      
                       <button
                         onClick={() => toggleFavorite(selectedBreed.id)}
                         style={ui.btn({ icon: true, glow: isFavorite })}
@@ -1724,12 +1906,134 @@ const { data, error } = await supabase
                         >
                           {autoSave ? "💾 Autosave ON" : "💾 Autosave OFF"}
                         </button>
+                      
                       </>
                     )}
                   </div>
                 </div>
               </div>
 
+{/* ✅ PLANNER */}
+<div style={{ marginTop: 14 }}>
+  <GlassCard className="planner-card">
+    <div className="planner-head">
+      <div className="planner-title">Planner</div>
+
+      <div className="planner-tabs">
+        <button
+          className={plannerTab === "reminders" ? "active" : ""}
+          onClick={() => setPlannerTab("reminders")}
+        >
+          Reminders
+        </button>
+        <button
+          className={plannerTab === "logs" ? "active" : ""}
+          onClick={() => setPlannerTab("logs")}
+        >
+          Logs
+        </button>
+      </div>
+    </div>
+
+    {plannerTab === "reminders" ? (
+      <>
+<div className="planner-add">
+  <div className="planner-field">
+    <label>Reminder </label>
+    <input
+      value={newReminderTitle}
+      onChange={(e) => setNewReminderTitle(e.target.value)}
+      placeholder="Water change"
+    />
+  </div>
+
+  <div className="planner-field">
+    <label>Repeat (days)</label>
+    <input
+      value={newReminderRepeatDays}
+      onChange={(e) => setNewReminderRepeatDays(e.target.value)}
+      placeholder="7"
+      inputMode="numeric"
+    />
+  </div>
+
+  <div className="planner-field">
+    <label>Due </label>
+    <input
+      type="date"
+      value={newReminderDueOn}
+      onChange={(e) => setNewReminderDueOn(e.target.value)}
+    />
+  </div>
+
+  <button onClick={addReminder}>Add</button>
+</div>
+
+        <div className="planner-list">
+          {reminders.map((r) => (
+            <div key={r.id} className={`planner-row ${r.is_active ? "" : "muted"}`}>
+              <div className="planner-row-main">
+                <div className="planner-row-title">{r.title}</div>
+                <div className="planner-row-meta">
+                  {r.repeat_every_days ? `Repeats every ${r.repeat_every_days}d` : ""}
+                  {r.due_on ? ` • Due ${r.due_on}` : ""}
+                </div>
+              </div>
+
+              <div className="planner-row-actions">
+                <button onClick={() => toggleReminder(r.id, r.is_active)}>
+                  {r.is_active ? "On" : "Off"}
+                </button>
+                <button onClick={() => deleteReminder(r.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+          {!reminders.length && <div className="planner-empty">No reminders yet.</div>}
+        </div>
+      </>
+    ) : (
+      <>
+        <div className="planner-add">
+          <select value={newLogKind} onChange={(e) => setNewLogKind(e.target.value)}>
+            <option value="notes">Notes</option>
+            <option value="fed">Fed</option>
+            <option value="water_change">Water change</option>
+            <option value="cleaned">Cleaned</option>
+            <option value="meds">Meds</option>
+          </select>
+
+          <input
+            value={newLogNote}
+            onChange={(e) => setNewLogNote(e.target.value)}
+            placeholder="Log note (optional)"
+          />
+
+          <button onClick={addLog}>Log</button>
+        </div>
+
+        <div className="planner-list">
+          {logs.map((l) => (
+            <div key={l.id} className="planner-row">
+              <div className="planner-row-main">
+                <div className="planner-row-title">{l.kind}</div>
+                <div className="planner-row-meta">
+                  {new Date(l.done_at).toLocaleString()}
+                  {l.note ? ` • ${l.note}` : ""}
+                </div>
+              </div>
+
+              <div className="planner-row-actions">
+                <button onClick={() => deleteLog(l.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+          {!logs.length && <div className="planner-empty">No logs yet.
+Start tracking feeding, health, or behavior notes.</div>}
+        </div>
+      </>
+    )}
+  </GlassCard>
+</div>
               
               {/* Quick facts */}
               <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
@@ -1879,31 +2183,72 @@ const { data, error } = await supabase
     ) : (
       <div style={{ display: "grid", gap: 10 }}>
         {sortedBreeds.map((b) => (
-          <div
-            key={b.id}
-            style={{
-            ...ui.softCard(),
-            padding: 14,
-            cursor: "pointer",
-            userSelect: "none",
-            transition: "transform .12s ease, box-shadow .12s ease",
-          }}
-          
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-2px)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0px)";
-          }}
-            onClick={() => setSelectedBreed(b)}
-          >
-            <div style={{ fontWeight: 950 }}>{b.proper_name || b.name}</div>
-            {b.scientific_name && (
-              <div style={{ opacity: 0.7, fontStyle: "italic", fontSize: 12, marginTop: 2 }}>
-                {b.scientific_name}
-              </div>
-            )}
-          </div>
+<div
+  key={b.id}
+  onClick={() => setSelectedBreed(b)}
+  title="Open care sheet"
+  style={{
+    ...ui.softCard(),
+    padding: 12,
+    cursor: "pointer",
+    userSelect: "none",
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    transition: "transform .12s ease, box-shadow .12s ease",
+  }}
+  onMouseEnter={(e) => {
+    e.currentTarget.style.transform = "translateY(-2px)";
+  }}
+  onMouseLeave={(e) => {
+    e.currentTarget.style.transform = "translateY(0px)";
+  }}
+>
+  {/* Thumbnail */}
+  <div
+    style={{
+      width: 58,
+      height: 58,
+      borderRadius: 14,
+      overflow: "hidden",
+      flexShrink: 0,
+      border: `1px solid ${theme.border}`,
+      background: "rgba(0,0,0,.06)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 12,
+      opacity: 0.9,
+    }}
+  >
+    {b.image_url && imageSrcCache[b.image_url] ? (
+      <img
+        src={imageSrcCache[b.image_url]}
+        alt={b.name}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        loading="eager"
+      />
+    ) : (
+      <span style={{ opacity: 0.6 }}>No img</span>
+    )}
+  </div>
+
+  {/* Text */}
+  <div style={{ minWidth: 0, flex: 1 }}>
+    <div style={{ fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      {b.proper_name || b.name}
+    </div>
+
+    {b.scientific_name && (
+      <div style={{ opacity: 0.7, fontStyle: "italic", fontSize: 12, marginTop: 2 }}>
+        {b.scientific_name}
+      </div>
+    )}
+  </div>
+
+  {/* Chevron */}
+  <div style={{ opacity: 0.5, fontSize: 18, paddingRight: 6 }}>›</div>
+</div>
         ))}
       </div>
     )}
@@ -2078,7 +2423,7 @@ function createUi(theme) {
 /* ----------------------------
    COMPONENTS
 ---------------------------- */
-function GlassCard({ children }) {
+function GlassCard({ children,className = "" }) {
   return (
     <div className="lux-card">
       <div className="lux-card__inner">{children}</div>
