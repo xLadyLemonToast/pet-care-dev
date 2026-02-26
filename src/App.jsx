@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { supabase } from "./supabase";
 import { createPortal } from "react-dom";
 import "./App.css";
@@ -2295,6 +2296,7 @@ Start tracking feeding, health, or behavior notes.</div>}
 );</div>
         </Modal>
       )}
+      <Analytics />
     </div>
   );
 }
