@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "./supabase";
 import { createPortal } from "react-dom";
 import "./App.css";
@@ -17,23 +17,48 @@ import "./App.css";
  *    - Redirect URLs: https://pet-care-dev.vercel.app/**  AND  http://localhost:5173/**
  */
 
+function ComboBox({ ui, value, items, onChange, placeholder = "Select…" }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      style={ui?.input ? ui.input() : undefined}
+    >
+      <option value="">{placeholder}</option>
+      {(items || []).map((it) => (
+        <option key={it.value} value={it.value}>
+          {it.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export default function App() {
-  // ----------------------------
-// AUTH (CLEAN + WORKING)
+// ----------------------------
+// AUTH (PASSWORD + MAGIC LINK + RESET)
 // ----------------------------
 const ADMIN_EMAILS = useMemo(
   () => new Set(["i-peters@outlook.com"].map((x) => x.toLowerCase().trim())),
   []
 );
 
-const [user, setUser] = useState(null);
-
+const [authMode, setAuthMode] = useState("login"); // "login" | "signup" | "magic" | "forgot"
 const [loginOpen, setLoginOpen] = useState(false);
 const [loginEmail, setLoginEmail] = useState("");
+const [loginPassword, setLoginPassword] = useState(""); // ✅ ADD THIS
 const [loginBusy, setLoginBusy] = useState(false);
 const [loginMsg, setLoginMsg] = useState("");
-
-const isAdmin = !!user && ADMIN_EMAILS.has((user.email || "").toLowerCase());
+const [user, setUser] = useState(null);
+const isAdmin = user?.email
+  ? ADMIN_EMAILS.has(user.email.toLowerCase().trim())
+  : false;
+const closeLogin = useCallback(() => {
+  setLoginOpen(false);
+  setLoginMsg("");
+  setLoginPassword("");
+  setAuthMode("login");
+}, []);
 
 useEffect(() => {
   let alive = true;
@@ -67,9 +92,64 @@ useEffect(() => {
   };
 }, []);
 
-async function loginWithMagicLink() {
+// --- helpers ---
+async function requireUser() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!user) throw new Error("Not logged in");
+  return user;
+}
+
+// --- auth actions ---
+async function loginWithPassword() {
   const email = loginEmail.trim().toLowerCase();
-  if (!email) return setLoginMsg("Enter your admin email.");
+  const password = loginPassword;
+
+  if (!email) return setLoginMsg("Enter your email.");
+  if (!password) return setLoginMsg("Enter your password.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginOpen(false);
+  setLoginMsg("");
+}
+
+async function signUpWithPassword() {
+  const email = loginEmail.trim().toLowerCase();
+  const password = loginPassword;
+
+  if (!email) return setLoginMsg("Enter your email.");
+  if (!password || password.length < 8) return setLoginMsg("Password must be at least 8 characters.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  const { data, error } = await supabase.auth.signUp({ email, password });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  // If confirm-email is ON, session may be null until they verify
+  if (!data.session) {
+    setLoginMsg("Check your email to confirm your account ✨");
+  } else {
+    setLoginMsg("");
+    setLoginOpen(false);
+  }
+}
+
+async function sendMagicLink() {
+  const email = loginEmail.trim().toLowerCase();
+  if (!email) return setLoginMsg("Enter your email.");
+
   setLoginBusy(true);
   setLoginMsg("");
 
@@ -81,16 +161,39 @@ async function loginWithMagicLink() {
   });
 
   setLoginBusy(false);
-  if (error) setLoginMsg(error.message);
-  else setLoginMsg("Magic link sent. Check your email ✨");
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginMsg("Magic link sent. Check your email ✨");
+}
+
+async function sendPasswordReset() {
+  const email = loginEmail.trim().toLowerCase();
+  if (!email) return setLoginMsg("Enter your email.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  // You need a route/page for this in your app:
+  const redirectTo = `${window.location.origin}/reset-password`;
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginMsg("Password reset email sent 📩");
 }
 
 async function logout() {
   await supabase.auth.signOut();
   setLoginOpen(false);
   setLoginMsg("");
+  setLoginEmail("");
+  setLoginPassword("");
+  setAuthMode("login");
 }
-
   // ----------------------------
   // APP STATE
   // ----------------------------
@@ -343,50 +446,72 @@ async function saveBreedTags(breedId, tags) {
   // LOGGER: add/update/delete reminders + logs for selected breed
   // ----------------------------
 
-  async function addReminder() {
+async function addReminder() {
   if (!selectedBreed?.id) return;
   const title = newReminderTitle.trim();
   if (!title) return;
 
   const repeatDays = parseInt(newReminderRepeatDays, 10);
 
-  const { data, error } = await supabase
-    .from("breed_reminders")
-    .insert({
-      breed_id: selectedBreed.id,
-      title,
-      due_on: newReminderDueOn || null,
-      repeat_every_days: Number.isFinite(repeatDays) ? repeatDays : null,
-      is_active: true,
-    })
-    .select()
-    .single();
+  try {
+    const user = await requireUser();
 
-  if (error) return console.error("addReminder", error);
+    const { data, error } = await supabase
+      .from("breed_reminders")
+      .insert({
+        breed_id: selectedBreed.id,
+        title,
+        due_on: newReminderDueOn || null,
+        repeat_every_days: Number.isFinite(repeatDays) ? repeatDays : null,
+        is_active: true,
+        user_id: user.id,
+      })
+      .select()
+      .single();
 
-  setReminders((prev) => [data, ...prev]);
-  setNewReminderTitle("");
-  setNewReminderRepeatDays("");
-  setNewReminderDueOn("");
+    if (error) return console.error("addReminder", error);
+
+    setReminders((prev) => [data, ...prev]);
+    setNewReminderTitle("");
+    setNewReminderRepeatDays("");
+    setNewReminderDueOn("");
+  } catch (e) {
+    console.error("addReminder", e);
+  }
 }
 
 async function toggleReminder(id, isActive) {
-  const { data, error } = await supabase
-    .from("breed_reminders")
-    .update({ is_active: !isActive })
-    .eq("id", id)
-    .select()
-    .single();
+  try {
+    await requireUser(); // ensures logged in (RLS will enforce ownership)
 
-  if (error) return console.error("toggleReminder", error);
+    const { data, error } = await supabase
+      .from("breed_reminders")
+      .update({ is_active: !isActive })
+      .eq("id", id)
+      .select()
+      .single();
 
-  setReminders((prev) => prev.map((r) => (r.id === id ? data : r)));
+    if (error) return console.error("toggleReminder", error);
+    setReminders((prev) => prev.map((r) => (r.id === id ? data : r)));
+  } catch (e) {
+    console.error("toggleReminder", e);
+  }
 }
 
 async function deleteReminder(id) {
-  const { error } = await supabase.from("breed_reminders").delete().eq("id", id);
-  if (error) return console.error("deleteReminder", error);
-  setReminders((prev) => prev.filter((r) => r.id !== id));
+  try {
+    await requireUser();
+
+    const { error } = await supabase
+      .from("breed_reminders")
+      .delete()
+      .eq("id", id);
+
+    if (error) return console.error("deleteReminder", error);
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+  } catch (e) {
+    console.error("deleteReminder", e);
+  }
 }
 
 async function addLog() {
@@ -394,29 +519,46 @@ async function addLog() {
 
   const note = newLogNote.trim();
 
-  const { data, error } = await supabase
-    .from("breed_logs")
-    .insert({
-      breed_id: selectedBreed.id,
-      kind: newLogKind,
-      note: note || null,
-    })
-    .select()
-    .single();
+  try {
+    const user = await requireUser();
 
-  if (error) return console.error("addLog", error);
+    const { data, error } = await supabase
+      .from("breed_logs")
+      .insert({
+        breed_id: selectedBreed.id,
+        kind: newLogKind,
+        note: note || null,
+        user_id: user.id,
+        done_at: new Date().toISOString(), // optional but helps ordering
+      })
+      .select()
+      .single();
 
-  setLogs((prev) => [data, ...prev]);
-  setNewLogKind("notes");
-  setNewLogNote("");
+    if (error) return console.error("addLog", error);
+
+    setLogs((prev) => [data, ...prev]);
+    setNewLogKind("notes");
+    setNewLogNote("");
+  } catch (e) {
+    console.error("addLog", e);
+  }
 }
 
 async function deleteLog(id) {
-  const { error } = await supabase.from("breed_logs").delete().eq("id", id);
-  if (error) return console.error("deleteLog", error);
-  setLogs((prev) => prev.filter((l) => l.id !== id));
-}
+  try {
+    await requireUser();
 
+    const { error } = await supabase
+      .from("breed_logs")
+      .delete()
+      .eq("id", id);
+
+    if (error) return console.error("deleteLog", error);
+    setLogs((prev) => prev.filter((l) => l.id !== id));
+  } catch (e) {
+    console.error("deleteLog", e);
+  }
+}
   // ----------------------------
   // PLANNER: load reminders + logs for selected breed
   // ----------------------------
@@ -428,24 +570,40 @@ useEffect(() => {
   }
 
   (async () => {
+    const {
+      data: { user },
+      error: uErr,
+    } = await supabase.auth.getUser();
+
+    if (uErr) console.error("getUser error", uErr);
+
+    // If not logged in, show nothing (or you can show a login prompt)
+    if (!user) {
+      setReminders([]);
+      setLogs([]);
+      return;
+    }
+
     const { data: r, error: rErr } = await supabase
       .from("breed_reminders")
       .select("*")
       .eq("breed_id", selectedBreed.id)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (rErr) console.error("load reminders", rErr);
-    setReminders(r || []);
+    setReminders(r ?? []);
 
     const { data: l, error: lErr } = await supabase
       .from("breed_logs")
       .select("*")
       .eq("breed_id", selectedBreed.id)
+      .eq("user_id", user.id)
       .order("done_at", { ascending: false })
       .limit(50);
 
     if (lErr) console.error("load logs", lErr);
-    setLogs(l || []);
+    setLogs(l ?? []);
   })();
 }, [selectedBreed?.id]);
 
@@ -862,6 +1020,7 @@ function openAllCategories() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, editMode, breedId, draftsByCategoryId]);
 
@@ -1281,26 +1440,7 @@ const { data, error } = await supabase
       </button>
       {menuOpen && (
   <div className="floating-menu">
-    {!user ? (
-        <button
-          onClick={() => setLoginOpen(true)}
-          style={{
-          className:"menu-item",
-          textalign: "center",
-          fontWeight: 900,
-  }}
-        >
-          Admin Login
-        </button>
-      ) : (
-        <button
-          onClick={logout}
-          style={ui.btn({ weight: 900, tone: "bad" })}
-        >
-          Logout
-        </button>
-      )
-    }  
+    
     <button onClick={() => { setPlannerTab("reminders"); setMenuOpen(false); }}
           style={{
           className:"menu-item",
@@ -1308,9 +1448,8 @@ const { data, error } = await supabase
           fontWeight: 900,
         }}
       >
-      Planner
+      Reminders
     </button>
-
     <button onClick={() => { closeAllCategories(); setMenuOpen(false); }}
           style={{
           className:"menu-item",
@@ -1318,9 +1457,8 @@ const { data, error } = await supabase
           fontWeight: 900,
         }}
       >
-      Care
+      Logs
     </button>
-    
   </div>
 )}
 
@@ -1331,6 +1469,28 @@ const { data, error } = await supabase
       >
         {darkMode ? "🌙" : "☀️"}
       </button>
+
+{!user ? (
+        <button
+          onClick={() => setLoginOpen(true)}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+  }}
+        >
+          Login
+        </button>
+      ) : (
+        <button
+          onClick={logout}
+          style={ui.btn({ weight: 900, tone: "bad" })}
+        >
+          Logout
+        </button>
+      )
+    }  
+
     </div>
   </div>
 
@@ -2255,31 +2415,162 @@ Start tracking feeding, health, or behavior notes.</div>}
   </div>
 )}
 </div>
-</div>
-      
 
-      {/* Login Modal */}
-      {loginOpen && (
-        <Modal title="Admin Login" subtitle="Magic link login (Supabase)" onClose={() => setLoginOpen(false)} ui={ui}>
-          <div style={{ display: "grid", gap: 10 }}>
-            <input
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              placeholder="you@company.com"
-              style={ui.input()}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") loginWithMagicLink();
-              }}
-            />
-            <button onClick={loginWithMagicLink} disabled={loginBusy} style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}>
-              {loginBusy ? "Sending..." : "Send Magic Link"}
+</div>
+  
+
+{/* Login Modal */}
+{loginOpen && (
+  <Modal
+    title={
+      authMode === "login" ? "Log in" :
+      authMode === "signup" ? "Create account" :
+      authMode === "forgot" ? "Reset password" :
+      "Magic link"
+    }
+    subtitle={
+      authMode === "login" ? "Email + password" :
+      authMode === "signup" ? "Create an account" :
+      authMode === "forgot" ? "We’ll email you a reset link" :
+      "Email-only sign in"
+    }
+    onClose={() => {
+      setLoginOpen(false);
+      setLoginMsg("");
+      setLoginPassword("");
+      setAuthMode("login");
+    }}
+    ui={ui}
+  >
+    <div style={{ display: "grid", gap: 10 }}>
+      {/* Email */}
+      <input
+        value={loginEmail}
+        onChange={(e) => setLoginEmail(e.target.value)}
+        placeholder="you@company.com"
+        style={ui.input()}
+        autoComplete="email"
+      />
+
+      {/* Password */}
+      {(authMode === "login" || authMode === "signup") && (
+        <input
+          value={loginPassword}
+          onChange={(e) => setLoginPassword(e.target.value)}
+          placeholder="Password"
+          type="password"
+          style={ui.input()}
+          autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (authMode === "login") loginWithPassword();
+            if (authMode === "signup") signUpWithPassword();
+          }}
+        />
+      )}
+
+      {/* Primary action */}
+      {authMode === "login" && (
+        <button
+          type="button"
+          onClick={loginWithPassword}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Logging in..." : "Log in"}
+        </button>
+      )}
+
+      {authMode === "signup" && (
+        <button
+          type="button"
+          onClick={signUpWithPassword}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Creating..." : "Create account"}
+        </button>
+      )}
+
+      {authMode === "forgot" && (
+        <button
+          type="button"
+          onClick={sendPasswordReset}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Sending..." : "Send reset email"}
+        </button>
+      )}
+
+      {authMode === "magic" && (
+        <button
+          type="button"
+          onClick={sendMagicLink}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Sending..." : "Send magic link"}
+        </button>
+      )}
+
+      {/* Message */}
+      {loginMsg ? <div style={ui.msg(loginMsg)}>{loginMsg}</div> : null}
+
+      {/* Switchers */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
+        {authMode !== "login" && (
+          <button
+            type="button"
+            onClick={() => { setAuthMode("login"); setLoginMsg(""); }}
+            disabled={loginBusy}
+            style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+          >
+            Back to login
+          </button>
+        )}
+
+        {authMode === "login" && (
+          <>
+            <button
+              type="button"
+              onClick={() => { setAuthMode("signup"); setLoginMsg(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Create account
             </button>
-            {loginMsg && <div style={ui.msg(loginMsg)}>{loginMsg}</div>}
-            <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4 }}>
-              If the link opens but does not log you in, double-check Supabase Auth: Site URL + Redirect URLs.
-            
-            {/* FOOTER — PUT IT HERE */}
+
+            <button
+              type="button"
+              onClick={() => { setAuthMode("forgot"); setLoginMsg(""); setLoginPassword(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Forgot password
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAuthMode("magic"); setLoginMsg(""); setLoginPassword(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Use magic link instead
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Help */}
+      <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4, marginTop: 6 }}>
+        {authMode === "magic" && <>If the link opens but doesn’t log you in, check Supabase Auth: Site URL + Redirect URLs.</>}
+        {authMode === "forgot" && <>You’ll be sent a reset link. You need a <code>/reset-password</code> page to set the new password.</>}
+      </div>
+    </div>
+  </Modal>
+)}
+ {/* FOOTER — PUT IT HERE */}
 <footer style={{
   marginTop: 80,
   padding: "32px 0",
@@ -2290,13 +2581,8 @@ Start tracking feeding, health, or behavior notes.</div>}
 }}>
   © {new Date().getFullYear()} Made by Immaline Peters. All rights reserved.
 </footer>
-
 </div>
-);</div>
-        </Modal>
-      )}
-    </div>
-  );
+);
 }
 
 /* ----------------------------
@@ -2602,11 +2888,11 @@ function GridCard({ theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav,
   );
 }
 
-
+// ✅ A reusable, generic modal component for logins
 function Modal({ title, subtitle, children, onClose, ui }) {
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onClose?.();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2614,11 +2900,17 @@ function Modal({ title, subtitle, children, onClose, ui }) {
 
   return (
     <div
-      onMouseDown={onClose}
+      className="lux-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // only close when clicking the backdrop, not inside the dialog
+        if (e.target === e.currentTarget) onClose?.();
+      }}
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 1,
+        zIndex: 1000,
         background: "rgba(0,0,0,.55)",
         display: "grid",
         placeItems: "center",
@@ -2626,180 +2918,48 @@ function Modal({ title, subtitle, children, onClose, ui }) {
       }}
     >
       <div
+        className="lux-modal"
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: "min(520px, 100%)",
           borderRadius: 22,
           border: "1px solid rgba(255,255,255,.14)",
           background: "rgba(18,22,44,.70)",
-          boxShadow: "0 30px 90px rgba(0,0,0,.50)",
-          backdropFilter: "blur(18px)",
-          padding: 16,
+          boxShadow: "0 20px 80px rgba(0,0,0,.55)",
+          overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontWeight: 950, fontSize: 18 }}>{title}</div>
-            {subtitle && <div style={{ marginTop: 6, opacity: 0.85, fontSize: 13 }}>{subtitle}</div>}
-          </div>
-          <button onClick={onClose} style={ui.btn({ icon: true })} title="Close">
-            ✕
-          </button>
+        {/* Header */}
+        <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,.10)" }}>
+          <div style={{ fontWeight: 950, fontSize: 16, color: "white" }}>{title}</div>
+          {!!subtitle && (
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8, color: "white" }}>
+              {subtitle}
+            </div>
+          )}
         </div>
-        <div style={{ marginTop: 12 }}>{children}</div>
-      </div>
-    </div>
-  );
-}
 
-function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disabled = false }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef(null);
+        {/* Body */}
+        <div style={{ padding: 16 }}>{children}</div>
 
-  const selectedLabel = useMemo(() => {
-    const found = items.find((x) => x.value === value);
-    return found?.label ?? "";
-  }, [items, value]);
-
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    if (!t) return items;
-    return items.filter((x) => (x.label ?? "").toLowerCase().includes(t));
-  }, [items, q]);
-
-  useEffect(() => {
-    function onDoc(e) {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  function pick(v) {
-    onChange(v);
-    setOpen(false);
-    setQ("");
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        style={{
-          ...ui.input(),
-          textAlign: "left",
-          cursor: disabled ? "not-allowed" : "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-        }}
-      >
-        <span style={{ opacity: selectedLabel ? 1 : 0.72 }}>{selectedLabel || placeholder}</span>
-        <span style={{ opacity: 0.75 }}>{open ? "▲" : "▼"}</span>
-      </button>
-
-{open && !disabled &&
-  createPortal(
-    (() => {
-      const r = wrapRef.current?.getBoundingClientRect();
-      if (!r) return null;
-
-      const width = r.width;
-      const left = r.left + window.scrollX;
-      const top = r.bottom + window.scrollY + 8;
-
-      return (
+        {/* Footer */}
         <div
           style={{
-            position: "absolute",
-            left,
-            top,
-            width,
-            zIndex: 999999,
-            borderRadius: 16,
-            border: "1px solid rgba(255,255,255,.14)",
-            background: "rgba(16,22,44,.72)",
-            boxShadow: "0 22px 60px rgba(0,0,0,.45)",
-            backdropFilter: "blur(16px)",
-            overflow: "hidden",
+            padding: 12,
+            borderTop: "1px solid rgba(255,255,255,.10)",
+            display: "flex",
+            justifyContent: "flex-end",
           }}
-          onMouseDown={(e) => e.stopPropagation()}
         >
-          <div style={{ padding: 10 }}>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Type to filter..."
-              style={ui.input({ borderRadius: 12 })}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setOpen(false);
-              }}
-            />
-          </div>
-
-          <div style={{ maxHeight: 260, overflowY: "auto" }}>
-            {filtered.length ? (
-              filtered.map((it) => (
-                <button
-                  key={it.value}
-                  onClick={() => pick(it.value)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    border: "none",
-                    background: it.value === value ? "rgba(122,162,255,.18)" : "transparent",
-                    color: "rgba(255,255,255,.92)",
-                    cursor: "pointer",
-                    fontWeight: it.value === value ? 900 : 800,
-                  }}
-                >
-                  {it.label}
-                </button>
-              ))
-            ) : (
-              <div style={{ padding: 12, opacity: 0.8 }}>No matches.</div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={ui?.btn ? ui.btn({ weight: 900 }) : undefined}
+          >
+            Close
+          </button>
         </div>
-      );
-    })(),
-    document.body
-  )}
-    </div>
-  );
-}
-function BreedImagePreview({ rawUrl, resolveImageSrc, theme }) {
-  const [src, setSrc] = useState("");
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const resolved = await resolveImageSrc(rawUrl);
-      if (mounted) setSrc(resolved || "");
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [rawUrl, resolveImageSrc]);
-
-  if (!rawUrl) return null;
-
-  return (
-    <div style={{ marginTop: 10, borderRadius: 16, overflow: "hidden", border: `1px solid ${theme.border}`, background: theme.glass2, backdropFilter: "blur(12px)" }}>
-      {src ? (
-        <img src={src} alt="Preview" style={{ width: "100%", height: 220, objectFit: "cover", display: "block" }} />
-      ) : (
-        <div style={{ padding: 12, opacity: 0.85 }}>Preview loading…</div>
-      )}
-      
-      
+      </div>
     </div>
   );
 }
@@ -2819,3 +2979,4 @@ function readFileAsImage(file) {
     img.src = url;
   });
 }
+

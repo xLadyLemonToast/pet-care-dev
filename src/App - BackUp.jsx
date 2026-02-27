@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "./supabase";
+import { createPortal } from "react-dom";
 import "./App.css";
+
 
 /**
  * CLEAN WORKING APP.JSX
@@ -15,23 +17,48 @@ import "./App.css";
  *    - Redirect URLs: https://pet-care-dev.vercel.app/**  AND  http://localhost:5173/**
  */
 
+function ComboBox({ ui, value, items, onChange, placeholder = "Select…" }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      style={ui?.input ? ui.input() : undefined}
+    >
+      <option value="">{placeholder}</option>
+      {(items || []).map((it) => (
+        <option key={it.value} value={it.value}>
+          {it.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export default function App() {
-  // ----------------------------
-// AUTH (CLEAN + WORKING)
+// ----------------------------
+// AUTH (PASSWORD + MAGIC LINK + RESET)
 // ----------------------------
 const ADMIN_EMAILS = useMemo(
   () => new Set(["i-peters@outlook.com"].map((x) => x.toLowerCase().trim())),
   []
 );
 
-const [user, setUser] = useState(null);
-
+const [authMode, setAuthMode] = useState("login"); // "login" | "signup" | "magic" | "forgot"
 const [loginOpen, setLoginOpen] = useState(false);
 const [loginEmail, setLoginEmail] = useState("");
+const [loginPassword, setLoginPassword] = useState(""); // ✅ ADD THIS
 const [loginBusy, setLoginBusy] = useState(false);
 const [loginMsg, setLoginMsg] = useState("");
-
-const isAdmin = !!user && ADMIN_EMAILS.has((user.email || "").toLowerCase());
+const [user, setUser] = useState(null);
+const isAdmin = user?.email
+  ? ADMIN_EMAILS.has(user.email.toLowerCase().trim())
+  : false;
+const closeLogin = useCallback(() => {
+  setLoginOpen(false);
+  setLoginMsg("");
+  setLoginPassword("");
+  setAuthMode("login");
+}, []);
 
 useEffect(() => {
   let alive = true;
@@ -65,9 +92,64 @@ useEffect(() => {
   };
 }, []);
 
-async function loginWithMagicLink() {
+// --- helpers ---
+async function requireUser() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!user) throw new Error("Not logged in");
+  return user;
+}
+
+// --- auth actions ---
+async function loginWithPassword() {
   const email = loginEmail.trim().toLowerCase();
-  if (!email) return setLoginMsg("Enter your admin email.");
+  const password = loginPassword;
+
+  if (!email) return setLoginMsg("Enter your email.");
+  if (!password) return setLoginMsg("Enter your password.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginOpen(false);
+  setLoginMsg("");
+}
+
+async function signUpWithPassword() {
+  const email = loginEmail.trim().toLowerCase();
+  const password = loginPassword;
+
+  if (!email) return setLoginMsg("Enter your email.");
+  if (!password || password.length < 8) return setLoginMsg("Password must be at least 8 characters.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  const { data, error } = await supabase.auth.signUp({ email, password });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  // If confirm-email is ON, session may be null until they verify
+  if (!data.session) {
+    setLoginMsg("Check your email to confirm your account ✨");
+  } else {
+    setLoginMsg("");
+    setLoginOpen(false);
+  }
+}
+
+async function sendMagicLink() {
+  const email = loginEmail.trim().toLowerCase();
+  if (!email) return setLoginMsg("Enter your email.");
+
   setLoginBusy(true);
   setLoginMsg("");
 
@@ -79,34 +161,72 @@ async function loginWithMagicLink() {
   });
 
   setLoginBusy(false);
-  if (error) setLoginMsg(error.message);
-  else setLoginMsg("Magic link sent. Check your email ✨");
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginMsg("Magic link sent. Check your email ✨");
+}
+
+async function sendPasswordReset() {
+  const email = loginEmail.trim().toLowerCase();
+  if (!email) return setLoginMsg("Enter your email.");
+
+  setLoginBusy(true);
+  setLoginMsg("");
+
+  // You need a route/page for this in your app:
+  const redirectTo = `${window.location.origin}/reset-password`;
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+  setLoginBusy(false);
+
+  if (error) return setLoginMsg(error.message);
+
+  setLoginMsg("Password reset email sent 📩");
 }
 
 async function logout() {
   await supabase.auth.signOut();
   setLoginOpen(false);
   setLoginMsg("");
+  setLoginEmail("");
+  setLoginPassword("");
+  setAuthMode("login");
 }
-
-
   // ----------------------------
   // APP STATE
   // ----------------------------
   const [petTypes, setPetTypes] = useState([]);
   const [breeds, setBreeds] = useState([]);
   const [selectedBreed, setSelectedBreed] = useState(null);
-
+  const [petTypeIdSearch, setPetTypeIdSearch] = useState("");
   const [petTypeId, setPetTypeId] = useState("");
   const [breedId, setBreedId] = useState("");
-
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [categories, setCategories] = useState([]);
   const [guidesByCategoryId, setGuidesByCategoryId] = useState({});
   const [openCategoryIds, setOpenCategoryIds] = useState(new Set());
 
+  // ----------------------------
+  // Add Planner State (NEW) with Reminders + Logs
+  // ----------------------------
+  const [plannerTab, setPlannerTab] = useState("reminders"); // "reminders" | "logs"
+  const [reminders, setReminders] = useState([]);
+  const [logs, setLogs] = useState([]);
+
+  const [newReminderTitle, setNewReminderTitle] = useState("");
+  const [newReminderRepeatDays, setNewReminderRepeatDays] = useState(""); // string for input
+  const [newReminderDueOn, setNewReminderDueOn] = useState(""); // yyyy-mm-dd
+
+  const [newLogKind, setNewLogKind] = useState("notes");
+  const [newLogNote, setNewLogNote] = useState("");
+
   // UX
+  const [menuOpen, setMenuOpen] = useState(false); // Start Menu 
   const [activeTags, setActiveTags] = useState([]);
   const [breedSearch, setBreedSearch] = useState("");
+  const [petSearch, setPetSearch] = useState("");
   const [viewMode, setViewMode] = useState(() => {
     try {
       return localStorage.getItem("zoo_viewMode") || "detail"; // "detail" | "grid" | "admin"
@@ -123,6 +243,15 @@ async function logout() {
       return true;
     }
   });
+
+useEffect(() => {
+  document.body.classList.toggle("dark", darkMode);
+  document.body.classList.toggle("light", !darkMode);
+
+  try {
+    localStorage.setItem("zoo_darkMode", darkMode ? "1" : "0");
+  } catch {}
+}, [darkMode]);
 
   const [favorites, setFavorites] = useState(() => {
     
@@ -162,6 +291,7 @@ async function logout() {
     height_weight: "",
     group: "",
     origin: "",
+    proper_name: ""
   });
   
   // NEW: tags for the selected breed
@@ -313,6 +443,171 @@ async function saveBreedTags(breedId, tags) {
   }
 
   // ----------------------------
+  // LOGGER: add/update/delete reminders + logs for selected breed
+  // ----------------------------
+
+async function addReminder() {
+  if (!selectedBreed?.id) return;
+  const title = newReminderTitle.trim();
+  if (!title) return;
+
+  const repeatDays = parseInt(newReminderRepeatDays, 10);
+
+  try {
+    const user = await requireUser();
+
+    const { data, error } = await supabase
+      .from("breed_reminders")
+      .insert({
+        breed_id: selectedBreed.id,
+        title,
+        due_on: newReminderDueOn || null,
+        repeat_every_days: Number.isFinite(repeatDays) ? repeatDays : null,
+        is_active: true,
+        user_id: user.id,
+      })
+      .select()
+      .single();
+
+    if (error) return console.error("addReminder", error);
+
+    setReminders((prev) => [data, ...prev]);
+    setNewReminderTitle("");
+    setNewReminderRepeatDays("");
+    setNewReminderDueOn("");
+  } catch (e) {
+    console.error("addReminder", e);
+  }
+}
+
+async function toggleReminder(id, isActive) {
+  try {
+    await requireUser(); // ensures logged in (RLS will enforce ownership)
+
+    const { data, error } = await supabase
+      .from("breed_reminders")
+      .update({ is_active: !isActive })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) return console.error("toggleReminder", error);
+    setReminders((prev) => prev.map((r) => (r.id === id ? data : r)));
+  } catch (e) {
+    console.error("toggleReminder", e);
+  }
+}
+
+async function deleteReminder(id) {
+  try {
+    await requireUser();
+
+    const { error } = await supabase
+      .from("breed_reminders")
+      .delete()
+      .eq("id", id);
+
+    if (error) return console.error("deleteReminder", error);
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+  } catch (e) {
+    console.error("deleteReminder", e);
+  }
+}
+
+async function addLog() {
+  if (!selectedBreed?.id) return;
+
+  const note = newLogNote.trim();
+
+  try {
+    const user = await requireUser();
+
+    const { data, error } = await supabase
+      .from("breed_logs")
+      .insert({
+        breed_id: selectedBreed.id,
+        kind: newLogKind,
+        note: note || null,
+        user_id: user.id,
+        done_at: new Date().toISOString(), // optional but helps ordering
+      })
+      .select()
+      .single();
+
+    if (error) return console.error("addLog", error);
+
+    setLogs((prev) => [data, ...prev]);
+    setNewLogKind("notes");
+    setNewLogNote("");
+  } catch (e) {
+    console.error("addLog", e);
+  }
+}
+
+async function deleteLog(id) {
+  try {
+    await requireUser();
+
+    const { error } = await supabase
+      .from("breed_logs")
+      .delete()
+      .eq("id", id);
+
+    if (error) return console.error("deleteLog", error);
+    setLogs((prev) => prev.filter((l) => l.id !== id));
+  } catch (e) {
+    console.error("deleteLog", e);
+  }
+}
+  // ----------------------------
+  // PLANNER: load reminders + logs for selected breed
+  // ----------------------------
+useEffect(() => {
+  if (!selectedBreed?.id) {
+    setReminders([]);
+    setLogs([]);
+    return;
+  }
+
+  (async () => {
+    const {
+      data: { user },
+      error: uErr,
+    } = await supabase.auth.getUser();
+
+    if (uErr) console.error("getUser error", uErr);
+
+    // If not logged in, show nothing (or you can show a login prompt)
+    if (!user) {
+      setReminders([]);
+      setLogs([]);
+      return;
+    }
+
+    const { data: r, error: rErr } = await supabase
+      .from("breed_reminders")
+      .select("*")
+      .eq("breed_id", selectedBreed.id)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (rErr) console.error("load reminders", rErr);
+    setReminders(r ?? []);
+
+    const { data: l, error: lErr } = await supabase
+      .from("breed_logs")
+      .select("*")
+      .eq("breed_id", selectedBreed.id)
+      .eq("user_id", user.id)
+      .order("done_at", { ascending: false })
+      .limit(50);
+
+    if (lErr) console.error("load logs", lErr);
+    setLogs(l ?? []);
+  })();
+}, [selectedBreed?.id]);
+
+  // ----------------------------
   // DATA LOADERS
   // ----------------------------
   useEffect(() => {
@@ -343,8 +638,7 @@ async function saveBreedTags(breedId, tags) {
       setOpenCategoryIds(new Set());
       return;
     }
-    loadBreedDetails(breedId);
-    loadGuidesForBreed(breedId);
+    loadBreedBundle(breedId);
   }, [breedId]);
 
   async function loadPetTypes() {
@@ -406,10 +700,44 @@ async function saveBreedTags(breedId, tags) {
     setStatusByCategoryId({});
   }
 
+  async function loadBreedBundle(id) {
+    const { data, error } = await supabase
+      .from("breeds")
+      .select(
+        `
+        *,
+        breed_tags(tag),
+        care_guides(category_id,content)
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      console.error(error);
+      setSelectedBreed(null);
+      setGuidesByCategoryId({});
+      setDraftsByCategoryId({});
+      setSavingByCategoryId({});
+      setStatusByCategoryId({});
+      return;
+    }
+
+    setSelectedBreed(data ?? null);
+
+    const map = {};
+    for (const row of data?.care_guides ?? []) {
+      map[row.category_id] = row.content ?? "";
+    }
+    setGuidesByCategoryId(map);
+    setDraftsByCategoryId(map);
+    setSavingByCategoryId({});
+    setStatusByCategoryId({});
+  }
+
   async function refreshCurrentBreed() {
     if (!breedId) return;
-    await loadBreedDetails(breedId);
-    await loadGuidesForBreed(breedId);
+    await loadBreedBundle(breedId);
     toast("Refreshed 🔄");
   }
 
@@ -470,8 +798,8 @@ async function saveBreedTags(breedId, tags) {
     if (!darkMode) {
       return {
         mode: "light",
-        bg0: "#f6f5f1",
-        bg1: "#ffffff",
+        bg0: "transparent",
+        bg1: "transparent",
         text: "#0b0c10",
         subtext: "rgba(11,12,16,.70)",
         border: "rgba(11,12,16,.12)",
@@ -520,8 +848,8 @@ async function saveBreedTags(breedId, tags) {
   const cardTone = useMemo(() => {
     const tones = {
       "Height & Weight": { tint: "rgba(102,179,255,.14)", border: "rgba(102,179,255,.28)" },
-      Lifespan: { tint: "rgba(122,162,255,.12)", border: "rgba(122,162,255,.26)" },
-      Size: { tint: "rgba(180,180,200,.12)", border: "rgba(180,180,200,.24)" },
+        Lifespan: { tint: "rgba(122,162,255,.12)", border: "rgba(122,162,255,.26)" },
+        Size: { tint: "rgba(180,180,200,.12)", border: "rgba(180,180,200,.24)" },
       "Care Instructions": { tint: "rgba(120,255,196,.12)", border: "rgba(120,255,196,.26)" },
       "Dietary Needs": { tint: "rgba(255,191,102,.14)", border: "rgba(255,191,102,.28)" },
       "Exercise Needs": { tint: "rgba(180,120,255,.12)", border: "rgba(180,120,255,.26)" },
@@ -532,7 +860,7 @@ async function saveBreedTags(breedId, tags) {
   }, []);
 
   // ----------------------------
-  // FAVORITES + GRID
+  // Breeed & pet Search & FAVORITES + GRID
   // ----------------------------
   const searchFilteredBreeds = useMemo(() => {
     const q = breedSearch.trim().toLowerCase();
@@ -542,6 +870,15 @@ async function saveBreedTags(breedId, tags) {
       (b.name ?? "").toLowerCase().includes(q)
     );
   }, [breeds, breedSearch]);
+
+  const filteredPetTypes = useMemo(() => {
+  const q = petSearch.trim().toLowerCase();
+  if (!q) return petTypes;
+
+  return petTypes.filter((p) =>
+    (p.name ?? "").toLowerCase().includes(q)
+  );
+}, [petTypes, petSearch]);
 
 const tagFilteredBreeds = useMemo(() => {
   if (!activeTags.length) return searchFilteredBreeds;
@@ -559,12 +896,32 @@ const sortedBreeds = useMemo(() => {
     const af = favorites.has(a.id) ? 0 : 1;
     const bf = favorites.has(b.id) ? 0 : 1;
     if (af !== bf) return af - bf;
-
     return (a.name ?? "").localeCompare(b.name ?? "");
   });
 
-  return arr;
+   return arr;
 }, [tagFilteredBreeds, favorites]);
+
+const visibleBreeds = showFavoritesOnly
+  ? sortedBreeds.filter(b => favorites.has(b.id))
+  : sortedBreeds;
+
+useEffect(() => {
+  if (viewMode !== "grid" && viewMode !== "detail") return;
+  if (!petTypeId) return;
+
+  const toPrime = visibleBreeds.slice(0, 24);
+
+  toPrime.forEach((b) => {
+    const raw = b?.image_url;
+    if (!raw) return;
+    if (imageSrcCache[raw]) return;
+
+    resolveImageSrc(raw).then((resolved) => {
+      if (resolved) setImageSrcCache((p) => ({ ...p, [raw]: resolved }));
+    });
+  });
+}, [viewMode, petTypeId, sortedBreeds, imageSrcCache]);
 
   function toggleFavorite(id) {
     setFavorites((prev) => {
@@ -593,10 +950,16 @@ const sortedBreeds = useMemo(() => {
       return next;
     });
   }
+  // ----------------------------
+  // Hide Cards (e.g. Size, Lifespan) from main view but keep in admin for editing
+  // ----------------------------
+const HIDE_CARE_CARDS = new Set(["Size", "Lifespan"]);
 
-  function openAllCategories() {
-    setOpenCategoryIds(new Set(categories.map((c) => c.id)));
-  }
+function openAllCategories() {
+  setOpenCategoryIds(
+    new Set(categories.filter((c) => !HIDE_CARE_CARDS.has(c.name)).map((c) => c.id))
+  );
+}
 
   function closeAllCategories() {
     setOpenCategoryIds(new Set());
@@ -657,6 +1020,7 @@ const sortedBreeds = useMemo(() => {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, editMode, breedId, draftsByCategoryId]);
 
@@ -675,6 +1039,7 @@ const sortedBreeds = useMemo(() => {
       height_weight: "",
       group: "",
       origin: "",
+      proper_name: "",
     });
     setBreedTags([]);
     setTagInput("");
@@ -693,6 +1058,7 @@ function loadBreedIntoForm(b) {
     height_weight: b.height_weight ?? "",
     group: b.group ?? "",
     origin: b.origin ?? "",
+    proper_name: b.proper_name ?? "",
   });
 
   // ✅ Load tags into form (NEW)
@@ -721,6 +1087,7 @@ function loadBreedIntoForm(b) {
       origin: breedForm.origin?.trim() || null,
       size: breedForm.size?.trim() || null,
       height_weight: breedForm.height_weight?.trim() || null,
+      proper_name: breedForm.proper_name?.trim() || null,
     };
 
 const { data, error } = await supabase
@@ -958,14 +1325,13 @@ const { data, error } = await supabase
   // RENDER
   // ----------------------------
   return (
-    <div
-      className="lux-app"
+  <div
+    className={`lux-app ${selectedBreed ? "mode-detail" : "mode-grid"}`}
       style={{
         minHeight: "100vh",
         color: theme.text,
         fontFamily: "system-ui, Segoe UI, Arial",
         position: "relative",
-        background: theme.bg0,
         overflowX: "hidden",
       }}
     >
@@ -977,7 +1343,7 @@ const { data, error } = await supabase
           inset: 0,
           zIndex: 0,
           pointerEvents: "none",
-          background: `${calmGradients.a}, ${calmGradients.b}, ${calmGradients.c}, linear-gradient(180deg, ${theme.bg0}, ${theme.bg1})`,
+          background: "transparent",
         }}
       />
 
@@ -989,17 +1355,19 @@ const { data, error } = await supabase
           inset: 0,
           zIndex: 0,
           pointerEvents: "none",
-          opacity: darkMode ? 0.16 : 0.12,
+          opacity: darkMode ? 0.16 : 0.00,
           backgroundImage:
             "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E\")",
-          mixBlendMode: darkMode ? "overlay" : "multiply",
+          mixBlendMode: darkMode ? "overlay" : "normal",
         }}
       />
 
       {/* Cursor glow */}
       <div aria-hidden="true" className="lux-glow" />
 
-
+      {/* Pollen Layer*/}
+      <div className="pollen-layer" aria-hidden="true" />
+     
       {/* Toast */}
       <div
         style={{
@@ -1018,7 +1386,7 @@ const { data, error } = await supabase
             padding: "9px 12px",
             borderRadius: 12,
             background: theme.glass,
-            border: "1px solid " + theme.border,
+            border: `1px solid ${theme.border}`,
             backdropFilter: "blur(14px)",
             boxShadow: theme.shadow2,
             color: theme.text,
@@ -1034,177 +1402,177 @@ const { data, error } = await supabase
       <div style={{ position: "relative", zIndex: 1, padding: 34 }}>
         <div style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* HEADER */}
-          <div className="lux-topbar" style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-            <div>
+       {/* HEADER */}
+<header style={{ marginBottom: 18 }}>
 
-<div className="lux-actions">
-  {/* Row 1: always-visible primary controls */}
-  <div className="lux-actions__row">
-    <button onClick={() => setDarkMode((d) => !d)} style={ui.btn({ size: "sm" })}>
-      {darkMode ? "🌙 Dark" : "☀️ Light"}
+  {/* TOP UTILITY BAR */}
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "18px 0",
+      borderBottom: `1px solid ${theme.border}`,
+      marginBottom:18,
+    }}
+  >
+    <div style={{ 
+      fontWeight: 900, 
+      opacity: 0.60
+       + (darkMode ? 0.35 : 0.25),
+      fontSize: 20,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      letterSpacing: 0.18,
+      color: theme.subtext,
+      
+    }}>
+      🐾 Zoo Database
+    </div>
+
+    <div style={{ position: "relative", display: "flex", gap: 12, alignItems: "center" }}>
+      <button
+        onClick={() => setMenuOpen(v => !v)}
+        style={ui.btn({ weight: 800 })}
+      >
+        ☰
+      </button>
+      {menuOpen && (
+  <div className="floating-menu">
+    
+    <button onClick={() => { setPlannerTab("reminders"); setMenuOpen(false); }}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+        }}
+      >
+      Reminders
     </button>
+    <button onClick={() => { closeAllCategories(); setMenuOpen(false); }}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+        }}
+      >
+      Logs
+    </button>
+  </div>
+)}
 
+      <button
+        onClick={() => setDarkMode(d => !d)}
+        style={ui.btn({ icon: true })}
+        title="Toggle theme"
+      >
+        {darkMode ? "🌙" : "☀️"}
+      </button>
+
+{!user ? (
+        <button
+          onClick={() => setLoginOpen(true)}
+          style={{
+          className:"menu-item",
+          textalign: "center",
+          fontWeight: 900,
+  }}
+        >
+          Login
+        </button>
+      ) : (
+        <button
+          onClick={logout}
+          style={ui.btn({ weight: 900, tone: "bad" })}
+        >
+          Logout
+        </button>
+      )
+    }  
+
+    </div>
+  </div>
+
+  {/* HERO TITLE */}
+  <div style={{ textAlign: "center", marginBottom: 36, background: "radial-gradient(circle, rgba(255,230,180,0.12), transparent 70%)",
+ }}>
+    <h1
+      style={{
+        margin: 0,
+        fontSize: 48,
+        fontWeight: 950,
+        letterSpacing: -1.2,
+        textShadow: "0 10px 30px rgba(122,162,255,.25)",
+      }}
+    >
+      Zoo Database 🐾
+    </h1>
+
+    <div
+      style={{
+        marginTop: 12,
+        fontSize: 14,
+        color: theme.subtext,
+      }}
+    >
+      {isAdmin
+        ? "Admin session active."
+        : "Browse mode. Log in to edit and manage content."}
+    </div>
+  </div>
+
+  {/* VIEW NAVIGATION */}
+  <div style={{ display: "flex", justifyContent: "center" }}>
     <Segment
       value={viewMode}
-      onChange={(v) => setViewMode(v)}
+      onChange={setViewMode}
       options={[
         { value: "detail", label: "🧾 Detail" },
-        { 
-          value: "grid", 
-          label: "🧩 Grid", 
-          disabled: !petTypeId, 
-          title: !petTypeId ? "Pick a Pet Type first" : "" 
-        },
-        { value: "grid", label: "🧩 Grid", disabled: !petTypeId, title: !petTypeId ? "Pick a Pet Type first" : "" },
-        ...(isAdmin ? [{ value: "admin", label: "🛠️ Admin" }] : []),
+        { value: "grid", label: "🧩 Grid" },
       ]}
       ui={ui}
     />
   </div>
 
-  {/* Row 2: contextual actions (admin/login/debug) */}
-  <div className="lux-actions__row lux-actions__row--secondary">
-    {!isAdmin ? (
-      <button
-        onClick={() => {
-          setLoginOpen(true);
-          setLoginMsg("");
-          setLoginEmail("");
-        }}
-        style={ui.btn({ weight: 900, glow: true, size: "sm" })}
-      >
-        Admin Login
-      </button>
-    ) : (
-      <>
-        <div className="lux-adminPills">
-          <button
-            onClick={() => setEditMode((v) => !v)}
-            style={ui.btn({ weight: 900, tone: editMode ? "good" : "neutral", size: "sm" })}
-          >
-            {editMode ? "✏️ Edit: ON" : "✏️ Edit: OFF"}
-          </button>
-
-          <button
-            onClick={() => setAutoSave((v) => !v)}
-            style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral", size: "sm" })}
-            disabled={!editMode}
-            title="Autosave (debounced)"
-          >
-            {autoSave ? "💾 Autosave: ON" : "💾 Autosave: OFF"}
-          </button>
-
-          <button onClick={logout} style={ui.btn({ size: "sm" })}>
-            Logout
-          </button>
-        </div>
-
-        {/* Debug should NOT be equal weight to real controls */}
-        <button
-          onClick={async () => {
-            const { data } = await supabase.auth.getSession();
-            alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
-          }}
-          style={ui.btn({ size: "sm" })}
-          title="Debug: confirm session exists"
-        >
-          🧪 Session
-        </button>
-      </>
-    )}
-  </div>
-</div>
-
-              <div style={{ marginTop: 8, color: theme.subtext, fontSize: 14 }}>
-                {isAdmin ? "Admin session active. Database is locked to you." : "Browse mode. Log in to edit/add content."}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button onClick={() => setDarkMode((d) => !d)} style={ui.btn()}>
-                {darkMode ? "🌙 Dark" : "☀️ Light"}
-              </button>
-
-              <Segment
-                value={viewMode}
-                onChange={(v) => setViewMode(v)}
-                options={[
-                  { value: "detail", label: "🧾 Detail" },
-                  { value: "grid", label: "🧩 Grid", disabled: !petTypeId, title: !petTypeId ? "Pick a Pet Type first" : "" },
-                  ...(isAdmin ? [{ value: "admin", label: "🛠️ Admin" }] : []),
-                ]}
-                ui={ui}
-              />
-
-              {!isAdmin ? (
-                <button
-                  onClick={() => {
-                    setLoginOpen(true);
-                    setLoginMsg("");
-                    setLoginEmail("");
-                  }}
-                  style={ui.btn({ weight: 900, glow: true })}
-                >
-                  Admin Login
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => setEditMode((v) => !v)}
-                    style={ui.btn({ weight: 900, tone: editMode ? "good" : "neutral" })}
-                  >
-                    {editMode ? "✏️ Edit: ON" : "✏️ Edit: OFF"}
-                  </button>
-
-                  <button
-                    onClick={() => setAutoSave((v) => !v)}
-                    style={ui.btn({ weight: 900, tone: autoSave ? "info" : "neutral" })}
-                    disabled={!editMode}
-                    title="Autosave (debounced)"
-                  >
-                    {autoSave ? "💾 Autosave: ON" : "💾 Autosave: OFF"}
-                  </button>
-
-                  <button onClick={logout} style={ui.btn()}>
-                    Logout
-                  </button>
-                </>
-              )}
-
-              <button
-                onClick={async () => {
-                  const { data } = await supabase.auth.getSession();
-                  alert(data.session ? `SESSION ✅\n${data.session.user.email}` : "SESSION ❌ null");
-                }}
-                style={ui.btn({ weight: 900 })}
-                title="Debug: confirm session exists"
-              >
-                🧪 Session Check
-              </button>
-            </div>
-          </div>
-
+</header>
           {/* TOP CONTROLS */}
-          <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={{ 
+            marginTop: 10, 
+            display: "grid", 
+            gridTemplateColumns: "1fr 1fr", 
+            rowGap: 6, 
+            columnGap: 16 }}>
             <GlassCard>
               <div style={ui.hLabel()}>Pet Type</div>
+              
               <ComboBox
-                ui={ui}
-                value={petTypeId}
-                placeholder="Choose a pet type"
-                items={petTypeItems}
-                onChange={(v) => {
-                  setPetTypeId(v);
-                  setBreedId("");
-                  setSelectedBreed(null);
-                }}
-              />
+            ui={ui}
+              value={petTypeId}
+              placeholder="Choose a pet type"
+              items={filteredPetTypes.map(p => ({
+                value: p.id,
+                label: p.name
+              }))}
+              onChange={(v) => {
+                setPetTypeId(v);
+                setBreedId("");
+                setSelectedBreed(null);
+              }}
+            />
+          <button
+            onClick={() => {
+              setShowFavoritesOnly((v) => !v);
+              setViewMode("grid");
+              window.scrollTo({ top: 0, behavior: "smooth" });
 
-              <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={copyShareLink} style={ui.btn({ weight: 900 })}>
-                  🔗 Share Link
-                </button>
-              </div>
+            }}
+            style={ui.btn({ weight: 900, glow: showFavoritesOnly })}
+            title="Show favorites only"
+          >
+            ⭐ {showFavoritesOnly ? "Favorites ON" : "Favorites"}
+          </button>
+
             </GlassCard>
 
             <GlassCard>
@@ -1231,8 +1599,8 @@ const { data, error } = await supabase
 
           {/* GRID VIEW */}
           {viewMode === "grid" && petTypeId && (
-            <div style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ marginTop: 12}}>
+              <div style={{ position: "relative", zIndex: 999999, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ color: theme.subtext }}>
                   Showing <b>{sortedBreeds.length}</b> breed(s)
                 </div>
@@ -1242,8 +1610,8 @@ const { data, error } = await supabase
               </div>
 
               <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
-                {sortedBreeds.map((b) => (
-                  <GridCard
+            {visibleBreeds.map((b) => (
+                    <GridCard
                     key={b.id}
                     ui={ui}
                     theme={theme}
@@ -1270,6 +1638,7 @@ const { data, error } = await supabase
                       }
                     }}
                   />
+                  
                 ))}
               </div>
             </div>
@@ -1430,11 +1799,6 @@ const { data, error } = await supabase
                     </div>
 
                     <div>
-                      <div style={ui.label()}>Lifespan</div>
-                      <input value={breedForm.lifespan} onChange={(e) => setBreedForm((p) => ({ ...p, lifespan: e.target.value }))} style={ui.input()} />
-                    </div>
-
-                    <div>
                       <div style={ui.label()}>Group</div>
                       <input value={breedForm.group} onChange={(e) => setBreedForm((p) => ({ ...p, group: e.target.value }))} style={ui.input()} />
                     </div>
@@ -1445,8 +1809,8 @@ const { data, error } = await supabase
                     </div>
 
                     <div>
-                      <div style={ui.label()}>Size</div>
-                      <input value={breedForm.size} onChange={(e) => setBreedForm((p) => ({ ...p, size: e.target.value }))} style={ui.input()} />
+                      <div style={ui.label()}>Proper Name</div>
+                      <input value={breedForm.proper_name} onChange={(e) => setBreedForm((p) => ({ ...p, proper_name: e.target.value }))} style={ui.input()} />
                     </div>
 
                     <div style={{ gridColumn: "span 2" }}>
@@ -1601,7 +1965,7 @@ const { data, error } = await supabase
                   borderRadius: 24,
                   overflow: "hidden",
                   boxShadow: theme.shadow,
-                  border: "1px solid " + theme.border,
+                  border: `1px solid ${theme.border}`,
                   background: theme.glass,
                   backdropFilter: "blur(16px)",
                 }}
@@ -1635,12 +1999,17 @@ const { data, error } = await supabase
                     </div>
 
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      
                       <button
                         onClick={() => toggleFavorite(selectedBreed.id)}
                         style={ui.btn({ icon: true, glow: isFavorite })}
                         title={isFavorite ? "Unfavorite" : "Favorite"}
                       >
                         {isFavorite ? "⭐" : "☆"}
+                      </button>
+
+                      <button onClick={() => setSelectedBreed(null)} style={ui.btn({ weight: 900 })}>
+                        ← Back to list
                       </button>
 
                       <button onClick={refreshCurrentBreed} style={ui.btn({ weight: 900 })}>
@@ -1675,6 +2044,7 @@ const { data, error } = await supabase
                       </div>
                       
                     )}
+                    
                   <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button onClick={openAllCategories} style={ui.btn()}>
                       Expand all
@@ -1696,15 +2066,145 @@ const { data, error } = await supabase
                         >
                           {autoSave ? "💾 Autosave ON" : "💾 Autosave OFF"}
                         </button>
+                      
                       </>
                     )}
                   </div>
                 </div>
               </div>
 
+{/* ✅ PLANNER */}
+<div style={{ marginTop: 14 }}>
+  <GlassCard className="planner-card">
+    <div className="planner-head">
+      <div className="planner-title">Planner</div>
+
+      <div className="planner-tabs">
+        <button
+          className={plannerTab === "reminders" ? "active" : ""}
+          onClick={() => setPlannerTab("reminders")}
+        >
+          Reminders
+        </button>
+        <button
+          className={plannerTab === "logs" ? "active" : ""}
+          onClick={() => setPlannerTab("logs")}
+        >
+          Logs
+        </button>
+      </div>
+    </div>
+
+    {plannerTab === "reminders" ? (
+      <>
+<div className="planner-add">
+  <div className="planner-field">
+    <label>Reminder </label>
+    <input
+      value={newReminderTitle}
+      onChange={(e) => setNewReminderTitle(e.target.value)}
+      placeholder="Water change"
+    />
+  </div>
+
+  <div className="planner-field">
+    <label>Repeat (days)</label>
+    <input
+      value={newReminderRepeatDays}
+      onChange={(e) => setNewReminderRepeatDays(e.target.value)}
+      placeholder="7"
+      inputMode="numeric"
+    />
+  </div>
+
+  <div className="planner-field">
+    <label>Due </label>
+    <input
+      type="date"
+      value={newReminderDueOn}
+      onChange={(e) => setNewReminderDueOn(e.target.value)}
+    />
+  </div>
+
+  <button onClick={addReminder}>Add</button>
+</div>
+
+        <div className="planner-list">
+          {reminders.map((r) => (
+            <div key={r.id} className={`planner-row ${r.is_active ? "" : "muted"}`}>
+              <div className="planner-row-main">
+                <div className="planner-row-title">{r.title}</div>
+                <div className="planner-row-meta">
+                  {r.repeat_every_days ? `Repeats every ${r.repeat_every_days}d` : ""}
+                  {r.due_on ? ` • Due ${r.due_on}` : ""}
+                </div>
+              </div>
+
+              <div className="planner-row-actions">
+                <button onClick={() => toggleReminder(r.id, r.is_active)}>
+                  {r.is_active ? "On" : "Off"}
+                </button>
+                <button onClick={() => deleteReminder(r.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+          {!reminders.length && <div className="planner-empty">No reminders yet.</div>}
+        </div>
+      </>
+    ) : (
+      <>
+        <div className="planner-add">
+          <select value={newLogKind} onChange={(e) => setNewLogKind(e.target.value)}>
+            <option value="notes">Notes</option>
+            <option value="fed">Fed</option>
+            <option value="water_change">Water change</option>
+            <option value="cleaned">Cleaned</option>
+            <option value="meds">Meds</option>
+          </select>
+
+          <input
+            value={newLogNote}
+            onChange={(e) => setNewLogNote(e.target.value)}
+            placeholder="Log note (optional)"
+          />
+
+          <button onClick={addLog}>Log</button>
+        </div>
+
+        <div className="planner-list">
+          {logs.map((l) => (
+            <div key={l.id} className="planner-row">
+              <div className="planner-row-main">
+                <div className="planner-row-title">{l.kind}</div>
+                <div className="planner-row-meta">
+                  {new Date(l.done_at).toLocaleString()}
+                  {l.note ? ` • ${l.note}` : ""}
+                </div>
+              </div>
+
+              <div className="planner-row-actions">
+                <button onClick={() => deleteLog(l.id)}>Delete</button>
+              </div>
+            </div>
+          ))}
+          {!logs.length && <div className="planner-empty">No logs yet.
+Start tracking feeding, health, or behavior notes.</div>}
+        </div>
+      </>
+    )}
+  </GlassCard>
+</div>
+              
+              {/* Quick facts */}
+              <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+                <QuickFacts theme={theme} breed={selectedBreed} />
+              </div>
+
               {/* Care Cards */}
-              <div style={{ marginTop: 16 }}>
-                {categories.map((cat) => {
+                            <div style={{ marginTop: 16 }}>
+              {categories
+                .filter((cat) => !HIDE_CARE_CARDS.has(cat.name))
+                .map((cat) => {
                   const tone = cardTone(cat.name);
                   const isOpen = openCategoryIds.has(cat.id);
                   const content = guidesByCategoryId[cat.id] ?? "";
@@ -1721,7 +2221,7 @@ const { data, error } = await supabase
                         marginTop: 12,
                         borderRadius: 18,
                         overflow: "hidden",
-                        border: "1px solid " + theme.border,
+                        border: `1px solid ${theme.border}`,
                         background: darkMode ? theme.glass : `linear-gradient(180deg, ${theme.glass}, ${theme.glass2})`,
                         boxShadow: theme.shadow2,
                         backdropFilter: "blur(14px)",
@@ -1830,70 +2330,277 @@ const { data, error } = await supabase
             </>
           )}
 
-          {viewMode === "detail" && !selectedBreed && (
-            <div style={{ marginTop: 22, color: theme.subtext }}>Pick a Pet Type and a Breed to view its care sheet.</div>
-          )}
-        </div>
+{viewMode === "detail" && !selectedBreed && (
+  <div style={{ marginTop: 22 }}>
+    <div style={{ fontWeight: 950, fontSize: 16, marginBottom: 10 }}>
+      Animals ({sortedBreeds.length})
+    </div>
+
+    {sortedBreeds.length === 0 ? (
+      <div style={{ color: theme.subtext }}>
+        No animals loaded yet. Pick a Pet Type (or check your filters).
       </div>
-      
+    ) : (
+      <div style={{ display: "grid", gap: 10 }}>
+        {sortedBreeds.map((b) => (
+<div
+  key={b.id}
+  onClick={() => setSelectedBreed(b)}
+  title="Open care sheet"
+  style={{
+    ...ui.softCard(),
+    padding: 12,
+    cursor: "pointer",
+    userSelect: "none",
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    transition: "transform .12s ease, box-shadow .12s ease",
+  }}
+  onMouseEnter={(e) => {
+    e.currentTarget.style.transform = "translateY(-2px)";
+  }}
+  onMouseLeave={(e) => {
+    e.currentTarget.style.transform = "translateY(0px)";
+  }}
+>
+  {/* Thumbnail */}
+  <div
+    style={{
+      width: 58,
+      height: 58,
+      borderRadius: 14,
+      overflow: "hidden",
+      flexShrink: 0,
+      border: `1px solid ${theme.border}`,
+      background: "rgba(0,0,0,.06)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 12,
+      opacity: 0.9,
+    }}
+  >
+    {b.image_url && imageSrcCache[b.image_url] ? (
+      <img
+        src={imageSrcCache[b.image_url]}
+        alt={b.name}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        loading="eager"
+      />
+    ) : (
+      <span style={{ opacity: 0.6 }}>No img</span>
+    )}
+  </div>
+
+  {/* Text */}
+  <div style={{ minWidth: 0, flex: 1 }}>
+    <div style={{ fontWeight: 950, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      {b.proper_name || b.name}
+    </div>
+
+    {b.scientific_name && (
+      <div style={{ opacity: 0.7, fontStyle: "italic", fontSize: 12, marginTop: 2 }}>
+        {b.scientific_name}
+      </div>
+    )}
+  </div>
+
+  {/* Chevron */}
+  <div style={{ opacity: 0.5, fontSize: 18, paddingRight: 6 }}>›</div>
+</div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+</div>
+
+</div>
+  
+
 {/* Login Modal */}
 {loginOpen && (
   <Modal
-    title="Admin Login"
-    subtitle="Magic link login (Supabase)"
-    onClose={() => setLoginOpen(false)}
+    title={
+      authMode === "login" ? "Log in" :
+      authMode === "signup" ? "Create account" :
+      authMode === "forgot" ? "Reset password" :
+      "Magic link"
+    }
+    subtitle={
+      authMode === "login" ? "Email + password" :
+      authMode === "signup" ? "Create an account" :
+      authMode === "forgot" ? "We’ll email you a reset link" :
+      "Email-only sign in"
+    }
+    onClose={() => {
+      setLoginOpen(false);
+      setLoginMsg("");
+      setLoginPassword("");
+      setAuthMode("login");
+    }}
     ui={ui}
   >
     <div style={{ display: "grid", gap: 10 }}>
+      {/* Email */}
       <input
         value={loginEmail}
         onChange={(e) => setLoginEmail(e.target.value)}
         placeholder="you@company.com"
         style={ui.input()}
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === "Enter") loginWithMagicLink();
-        }}
+        autoComplete="email"
       />
 
-      <button
-        onClick={loginWithMagicLink}
-        disabled={loginBusy}
-        style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
-      >
-        {loginBusy ? "Sending..." : "Send Magic Link"}
-      </button>
+      {/* Password */}
+      {(authMode === "login" || authMode === "signup") && (
+        <input
+          value={loginPassword}
+          onChange={(e) => setLoginPassword(e.target.value)}
+          placeholder="Password"
+          type="password"
+          style={ui.input()}
+          autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (authMode === "login") loginWithPassword();
+            if (authMode === "signup") signUpWithPassword();
+          }}
+        />
+      )}
 
-      {loginMsg && <div style={ui.msg(loginMsg)}>{loginMsg}</div>}
+      {/* Primary action */}
+      {authMode === "login" && (
+        <button
+          type="button"
+          onClick={loginWithPassword}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Logging in..." : "Log in"}
+        </button>
+      )}
 
-      <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4 }}>
-        If the link opens but does not log you in, double-check Supabase Auth: Site URL + Redirect URLs.
+      {authMode === "signup" && (
+        <button
+          type="button"
+          onClick={signUpWithPassword}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Creating..." : "Create account"}
+        </button>
+      )}
+
+      {authMode === "forgot" && (
+        <button
+          type="button"
+          onClick={sendPasswordReset}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Sending..." : "Send reset email"}
+        </button>
+      )}
+
+      {authMode === "magic" && (
+        <button
+          type="button"
+          onClick={sendMagicLink}
+          disabled={loginBusy}
+          style={ui.btn({ weight: 900, disabled: loginBusy, glow: true })}
+        >
+          {loginBusy ? "Sending..." : "Send magic link"}
+        </button>
+      )}
+
+      {/* Message */}
+      {loginMsg ? <div style={ui.msg(loginMsg)}>{loginMsg}</div> : null}
+
+      {/* Switchers */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
+        {authMode !== "login" && (
+          <button
+            type="button"
+            onClick={() => { setAuthMode("login"); setLoginMsg(""); }}
+            disabled={loginBusy}
+            style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+          >
+            Back to login
+          </button>
+        )}
+
+        {authMode === "login" && (
+          <>
+            <button
+              type="button"
+              onClick={() => { setAuthMode("signup"); setLoginMsg(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Create account
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAuthMode("forgot"); setLoginMsg(""); setLoginPassword(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Forgot password
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setAuthMode("magic"); setLoginMsg(""); setLoginPassword(""); }}
+              disabled={loginBusy}
+              style={{ border: "none", background: "transparent", padding: 0, color: theme.subtext, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 800 }}
+            >
+              Use magic link instead
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Help */}
+      <div style={{ color: theme.subtext, fontSize: 12, lineHeight: 1.4, marginTop: 6 }}>
+        {authMode === "magic" && <>If the link opens but doesn’t log you in, check Supabase Auth: Site URL + Redirect URLs.</>}
+        {authMode === "forgot" && <>You’ll be sent a reset link. You need a <code>/reset-password</code> page to set the new password.</>}
       </div>
     </div>
   </Modal>
 )}
-
-    </div>
-  );
-}
+ {/* FOOTER — PUT IT HERE */}
+<footer style={{
+  marginTop: 80,
+  padding: "32px 0",
+  textAlign: "center",
+  opacity: .5,
+  fontSize: 13,
+  letterSpacing: ".08em"
+}}>
+  © {new Date().getFullYear()} Made by Immaline Peters. All rights reserved.
+</footer>
+</div>
+);
 
 /* ----------------------------
    UI FACTORY
 ---------------------------- */
 function createUi(theme) {
-const baseBtn = {
-  borderRadius: 12,
-  padding: "9px 12px",
-  border: "1px solid " + theme.border,
-  background: theme.glass,
-  color: theme.text,
-  cursor: "pointer",
-  fontWeight: 650,
-  letterSpacing: 0.2,
-  boxShadow: theme.shadow2,
-  backdropFilter: "blur(14px)",
-  transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease",
-};
+  const baseBtn = {
+    borderRadius: 12,
+    padding: "9px 12px",
+    border: `1px solid ${theme.border}`,
+    background: theme.glass,
+    color: theme.text,
+    cursor: "pointer",
+    fontWeight: 650,
+    letterSpacing: 0.2,
+    boxShadow: theme.shadow2,
+    backdropFilter: "blur(14px)",
+    transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease",
+  };
 
   function toneBorder(tone) {
     if (tone === "good") return "rgba(120,255,196,.36)";
@@ -1902,156 +2609,106 @@ const baseBtn = {
     return theme.border;
   }
 
-return {
-  btn: (opts = {}) => {
-    const {
-      weight = 800,
-      glow = false,
-      disabled = false,
-      tone = "neutral",
-      icon = false,
-      size = "md",
-    } = opts;
-
-    const pad =
-      size === "sm"
-        ? icon
-          ? "7px 9px"
-          : "7px 10px"
-        : icon
-          ? "10px 12px"
-          : baseBtn.padding;
-
-    const fontSize = size === "sm" ? 13 : 14;
-
-    return {
+  return {
+    btn: (opts = {}) => {
+      const { weight = 800, glow = false, disabled = false, tone = "neutral", icon = false } = opts;
+      return {
+        ...baseBtn,
+        fontWeight: weight,
+        opacity: disabled ? 0.65 : 1,
+        cursor: disabled ? "not-allowed" : "pointer",
+        padding: icon ? "10px 12px" : baseBtn.padding,
+        borderColor: glow ? theme.accentSoft : toneBorder(tone),
+        boxShadow: glow ? `0 16px 44px ${theme.accentSoft}` : theme.shadow2,
+      };
+    },
+    iconBtn: () => ({
       ...baseBtn,
-      fontWeight: weight,
-      fontSize,
-      opacity: disabled ? 0.65 : 1,
-      cursor: disabled ? "not-allowed" : "pointer",
-      padding: pad,
-      borderColor: glow ? theme.accentSoft : toneBorder(tone),
-      boxShadow: glow ? `0 16px 44px ${theme.accentSoft}` : theme.shadow2,
-    };
-  },
-
-  iconBtn: () => ({
-    ...baseBtn,
-    padding: "8px 10px",
-    fontSize: 13,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 38,
-    boxShadow: "none",
-    background: theme.glass2,
-  }),
-
-  input: (extra = {}) => ({
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid " + theme.border,
-    background: theme.glass2,
-    color: theme.text,
-    outline: "none",
-    boxShadow: "none",
-    backdropFilter: "blur(12px)",
-    transition: "border-color .12s ease, box-shadow .12s ease",
-    ...extra,
-  }),
-
-  textarea: (extra = {}) => ({
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid " + theme.border,
-    background: theme.glass2,
-    color: theme.text,
-    outline: "none",
-    resize: "vertical",
-    boxShadow: "none",
-    backdropFilter: "blur(12px)",
-    ...extra,
-  }),
-
-  label: () => ({
-    fontWeight: 900,
-    marginBottom: 8,
-    fontSize: 13,
-    color: theme.subtext,
-  }),
-
-  hLabel: () => ({
-    fontWeight: 950,
-    fontSize: 14,
-    marginBottom: 10,
-    color: theme.text,
-    letterSpacing: -0.2,
-  }),
-
-  softCard: () => ({
-    border: "1px solid " + theme.border,
-    background: theme.glass2,
-    borderRadius: 16,
-    padding: 12,
-    backdropFilter: "blur(12px)",
-  }),
-
-  row: () => ({
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid " + theme.border,
-    background: theme.glass2,
-    backdropFilter: "blur(12px)",
-  }),
-
-  dropzone: () => ({
-    border: "1px dashed " + theme.border,
-    borderRadius: 12,
-    padding: "10px 12px",
-    color: theme.subtext,
-    background: theme.glass2,
-    backdropFilter: "blur(12px)",
-  }),
-
-  msg: (text) => ({
-    color: text?.includes("Saved")
-      ? "rgba(120,255,196,.92)"
-      : text
-        ? "rgba(255,120,120,.92)"
-        : "transparent",
-    fontWeight: 900,
-    minHeight: 20,
-    alignSelf: "center",
-  }),
-
-  badge: (tone) => ({
-    padding: "6px 10px",
-    borderRadius: 12,
-    border:
-      "1px solid " +
-      (tone === "good"
-        ? "rgba(120,255,196,.35)"
-        : tone === "bad"
-          ? "rgba(255,120,120,.35)"
-          : theme.border),
-    background: theme.glass2,
-    fontWeight: 900,
-    color: theme.text,
-    backdropFilter: "blur(12px)",
-  }),
-};
+      padding: "8px 10px",
+      fontSize: 13,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 38,
+      boxShadow: "none",
+      background: theme.glass2,
+    }),
+    input: (extra = {}) => ({
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: `1px solid ${theme.border}`,
+      background: theme.glass2,
+      color: theme.text,
+      outline: "none",
+      boxShadow: "none",
+      backdropFilter: "blur(12px)",
+      transition: "border-color .12s ease, box-shadow .12s ease",
+      ...extra,
+    }),
+    textarea: (extra = {}) => ({
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: `1px solid ${theme.border}`,
+      background: theme.glass2,
+      color: theme.text,
+      outline: "none",
+      resize: "vertical",
+      boxShadow: "none",
+      backdropFilter: "blur(12px)",
+      ...extra,
+    }),
+    label: () => ({ fontWeight: 900, marginBottom: 8, fontSize: 13, color: theme.subtext }),
+    hLabel: () => ({ fontWeight: 950, fontSize: 14, marginBottom: 10, color: theme.text, letterSpacing: -0.2 }),
+    softCard: () => ({
+      border: `1px solid ${theme.border}`,
+      background: theme.glass2,
+      borderRadius: 16,
+      padding: 12,
+      backdropFilter: "blur(12px)",
+    }),
+    row: () => ({
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 12px",
+      borderRadius: 12,
+      border: `1px solid ${theme.border}`,
+      background: theme.glass2,
+      backdropFilter: "blur(12px)",
+    }),
+    dropzone: () => ({
+      border: `1px dashed ${theme.border}`,
+      borderRadius: 12,
+      padding: "10px 12px",
+      color: theme.subtext,
+      background: theme.glass2,
+      backdropFilter: "blur(12px)",
+    }),
+    msg: (text) => ({
+      color: text?.includes("Saved") ? "rgba(120,255,196,.92)" : text ? "rgba(255,120,120,.92)" : "transparent",
+      fontWeight: 900,
+      minHeight: 20,
+      alignSelf: "center",
+    }),
+    badge: (tone) => ({
+      padding: "6px 10px",
+      borderRadius: 12,
+      border: `1px solid ${tone === "good" ? "rgba(120,255,196,.35)" : tone === "bad" ? "rgba(255,120,120,.35)" : theme.border}`,
+      background: theme.glass2,
+      fontWeight: 900,
+      color: theme.text,
+      backdropFilter: "blur(12px)",
+    }),
+  };
 }
+
 /* ----------------------------
    COMPONENTS
 ---------------------------- */
-function GlassCard({ children }) {
+function GlassCard({ children,className = "" }) {
   return (
     <div className="lux-card">
       <div className="lux-card__inner">{children}</div>
@@ -2066,83 +2723,175 @@ function Chip({ children }) {
 function Segment({ value, onChange, options, ui }) {
   return (
     <div className="lux-segment">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => !o.disabled && onChange(o.value)}
-          disabled={o.disabled}
-          title={o.title || ""}
-          style={{
-            ...ui.btn({
-              weight: value === o.value ? 950 : 850,
-              disabled: !!o.disabled,
-              glow: value === o.value,
-            }),
-            padding: "8px 10px",
-            boxShadow: "none",
-            background: value === o.value ? "rgba(122,162,255,.14)" : "rgba(255,255,255,.05)",
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
+      {options.map((o) => {
+        const active = value === o.value;
+
+        return (
+          <button
+            key={o.value}
+            onClick={() => !o.disabled && onChange(o.value)}
+            disabled={o.disabled}
+            title={o.title || ""}
+
+            // ✅ lets CSS target the active state
+            aria-pressed={active}
+            className={active ? "active" : ""}
+            type="button"
+            style={{
+              ...ui.btn({
+                weight: active ? 950 : 850,
+                disabled: !!o.disabled,
+                glow: active,
+              }),
+              padding: "8px 10px",
+              boxShadow: "none",
+
+              // ✅ IMPORTANT: stop inline background from overriding your gold CSS
+              background: "transparent",
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+
+function QuickFacts({ theme, breed }) {
+  const facts = [
+    ["Origin", breed?.origin || breed?.Origin || "—"],
+    ["Lifespan", breed?.lifespan || "—"],
+    ["Group", breed?.group || "—"],
+    ["Size", breed?.size || breed?.height_weight || "—"],
+    ["Proper Name", breed?.proper_name || "—"],
+    ["Beginner friendly", breed?.beginner_friendly ? "Yes" : "No"],
+  ];
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${theme.border}`,
+        borderRadius: 18,
+        padding: 14,
+        background: "rgba(255,255,255,.04)",
+        boxShadow: theme.shadow2,
+        backdropFilter: "blur(14px)",
+      }}
+    >
+      <div style={{ fontWeight: 950, marginBottom: 10, letterSpacing: -0.2 }}>Quick Facts</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {facts.map(([k, v]) => (
+          <div key={k} style={{ display: "flex", gap: 10 }}>
+            <div style={{ width: 130, color: theme.subtext, fontWeight: 850 }}>{k}</div>
+            <div style={{ color: theme.text, fontWeight: 750, overflowWrap: "anywhere" }}>{String(v)}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 function GridCard({ theme, darkMode, breed, isFav, imgSrc, onClick, onToggleFav, onNeedResolve }) {
+  const subtitle =
+    (breed.temperament && String(breed.temperament)) ||
+    (breed.origin && `Origin: ${breed.origin}`) ||
+    ((breed.breed_tags ?? []).slice(0, 2).map((t) => t.tag).join(" • ")) ||
+    "";
+
+  const miniTags = (breed.breed_tags ?? []).slice(0, 2).map((t) => t.tag);
+
   return (
     <div
+      className="lux-gridcard"
       onClick={onClick}
       title="Open"
       style={{
-        borderRadius: 20,
+        borderRadius: 22,
         overflow: "hidden",
-        border: "1px solid " + theme.border,
+        border: `1px solid ${theme.border}`,
         background: "rgba(255,255,255,.04)",
         boxShadow: theme.shadow2,
         cursor: "pointer",
         backdropFilter: "blur(14px)",
-        transition: "transform .12s ease, box-shadow .12s ease",
+        transition: "transform .12s ease, box-shadow .12s ease, border-color .12s ease",
       }}
       onMouseEnter={onNeedResolve}
     >
-      <div style={{ height: 150, background: darkMode ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.35)" }}>
+      <div style={{ height: 170, background: darkMode ? "rgba(0,0,0,.22)" : "rgba(255,255,255,.35)" }}>
         {breed.image_url ? (
-          <img src={imgSrc || ""} alt={breed.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <img
+            src={imgSrc || ""}
+            alt={breed.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            loading="eager"
+          />
         ) : (
-          <div style={{ padding: 14, color: theme.subtext }}>No image</div>
+          <div style={{ height: "100%", display: "grid", placeItems: "center", color: theme.subtext }}>
+            <div style={{ opacity: 0.9, fontWeight: 900 }}>No image</div>
+          </div>
         )}
       </div>
 
-      <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <div style={{ fontWeight: 950, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {breed.name}
+      <div style={{ padding: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ fontWeight: 980, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {breed.name}
+          </div>
+
+          <button
+            onClick={onToggleFav}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 18,
+              color: theme.text,
+              padding: 8,
+              borderRadius: 12,
+            }}
+            title={isFav ? "Unfavorite" : "Favorite"}
+          >
+            {isFav ? "⭐" : "☆"}
+          </button>
         </div>
-        <button
-          onClick={onToggleFav}
-          style={{
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            fontSize: 18,
-            color: theme.text,
-            padding: 8,
-            borderRadius: 12,
-          }}
-          title={isFav ? "Unfavorite" : "Favorite"}
-        >
-          {isFav ? "⭐" : "☆"}
-        </button>
+
+        {subtitle ? (
+          <div
+            style={{
+              marginTop: 6,
+              color: theme.subtext,
+              fontSize: 12,
+              fontWeight: 750,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {subtitle}
+          </div>
+        ) : null}
+
+        {miniTags.length ? (
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {miniTags.map((t) => (
+              <span key={t} className="lux-chip" style={{ padding: "6px 9px" }}>
+                🏷️ {t}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
+// ✅ A reusable, generic modal component for logins
 function Modal({ title, subtitle, children, onClose, ui }) {
   useEffect(() => {
     function onKey(e) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onClose?.();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2150,11 +2899,16 @@ function Modal({ title, subtitle, children, onClose, ui }) {
 
   return (
     <div
-      onMouseDown={onClose}
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // only close when clicking the backdrop, not inside the dialog
+        if (e.target === e.currentTarget) onClose?.();
+      }}
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 60,
+        zIndex: 1000,
         background: "rgba(0,0,0,.55)",
         display: "grid",
         placeItems: "center",
@@ -2168,192 +2922,45 @@ function Modal({ title, subtitle, children, onClose, ui }) {
           borderRadius: 22,
           border: "1px solid rgba(255,255,255,.14)",
           background: "rgba(18,22,44,.70)",
-          boxShadow: "0 30px 90px rgba(0,0,0,.50)",
-          backdropFilter: "blur(18px)",
-          padding: 16,
+          boxShadow: "0 20px 80px rgba(0,0,0,.55)",
+          overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontWeight: 950, fontSize: 18 }}>{title}</div>
-            {subtitle && <div style={{ marginTop: 6, opacity: 0.85, fontSize: 13 }}>{subtitle}</div>}
-          </div>
-          <button onClick={onClose} style={ui.btn({ icon: true })} title="Close">
-            ✕
+        {/* Header */}
+        <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,.10)" }}>
+          <div style={{ fontWeight: 950, fontSize: 16, color: "white" }}>{title}</div>
+          {!!subtitle && (
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8, color: "white" }}>
+              {subtitle}
+            </div>
+          )}
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 16 }}>{children}</div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: 12,
+            borderTop: "1px solid rgba(255,255,255,.10)",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={ui?.btn ? ui.btn({ weight: 900 }) : undefined}
+          >
+            Close
           </button>
         </div>
-        <div style={{ marginTop: 12 }}>{children}</div>
       </div>
     </div>
   );
 }
 
-function ComboBox({ ui, value, onChange, items, placeholder = "Select...", disabled = false }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef(null);
-
-  const selectedLabel = useMemo(() => {
-    const found = items.find((x) => x.value === value);
-    return found?.label ?? "";
-  }, [items, value]);
-
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    if (!t) return items;
-    return items.filter((x) => (x.label ?? "").toLowerCase().includes(t));
-  }, [items, q]);
-
-  useEffect(() => {
-    function onDoc(e) {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  function pick(v) {
-    onChange(v);
-    setOpen(false);
-    setQ("");
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        style={{
-          ...ui.input(),
-          textAlign: "left",
-          cursor: disabled ? "not-allowed" : "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-        }}
-      >
-        <span style={{ opacity: selectedLabel ? 1 : 0.72 }}>{selectedLabel || placeholder}</span>
-        <span style={{ opacity: 0.75 }}>{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && !disabled && (
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: "calc(100% + 8px)",
-            zIndex: 9999,
-            borderRadius: 16,
-            border: "1px solid rgba(255,255,255,.14)",
-            background: "rgba(16,22,44,.72)",
-            boxShadow: "0 22px 60px rgba(0,0,0,.45)",
-            backdropFilter: "blur(16px)",
-            overflow: "hidden",
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setOpen(false);
-          }}
-        >
-          <div style={{ padding: 10 }}>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Type to filter..."
-              style={ui.input({ borderRadius: 12 })}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setOpen(false);
-              }}
-            />
-          </div>
-          <div style={{ maxHeight: 260, overflowY: "auto" }}>
-            {filtered.length ? (
-              filtered.map((it) => (
-                <button
-                  key={it.value}
-                  onClick={() => pick(it.value)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 12px",
-                    border: "none",
-                    background: it.value === value ? "rgba(122,162,255,.18)" : "transparent",
-                    color: "rgba(255,255,255,.92)",
-                    cursor: "pointer",
-                    fontWeight: it.value === value ? 900 : 800,
-                  }}
-                >
-                  {it.label}
-                </button>
-              ))
-            ) : (
-              <div style={{ padding: 12, opacity: 0.8 }}>No matches.</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BreedImagePreview({ rawUrl, resolveImageSrc, theme }) {
-  const [src, setSrc] = useState("");
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const resolved = await resolveImageSrc(rawUrl);
-      if (mounted) setSrc(resolved || "");
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [rawUrl, resolveImageSrc]);
-
-  if (!rawUrl) return null;
-
-  return (  
-    <div
-      style={{
-        marginTop: 10,
-        borderRadius: 16,
-        border: "1px solid " + theme.border,
-        background: theme.glass2,
-        backdropFilter: "blur(12px)",
-        padding: 10,
-        display: "inline-block",
-      }}
-    >
-      {src ? (
-        <img
-          src={src}
-          alt="Preview"
-          style={{ width: "100%", 
-            height: "220px", 
-            objectFit: "cover", display: "block" }}
-        />
-      ) : (
-        <div style={{ padding: 12, opacity: 0.85 }}>Preview loading…</div>
-      )}
-      <footer
-  style={{
-    marginTop: 80,
-    padding: "32px 0",
-    textAlign: "center",
-    opacity: 0.5,
-    fontSize: 13,
-    letterSpacing: ".08em",
-  }}
->
-  © {new Date().getFullYear()} Made by Immaline Peters. All rights reserved.
-</footer>
-    </div>
-  );
-}
 /* ----------------------------
    UTIL
 ---------------------------- */
@@ -2368,4 +2975,5 @@ function readFileAsImage(file) {
     img.onerror = (e) => reject(e);
     img.src = url;
   });
+}
 }

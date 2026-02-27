@@ -278,6 +278,39 @@ body.light::after{
     animation: none;
   }
 }
+/* =========================
+   LOGIN MODAL
+========================= */
+
+.lux-modal-backdrop {
+  background: rgba(0,0,0,.55) !important;
+}
+
+.lux-modal {
+  background: rgba(18,22,44,.70) !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  backdrop-filter: blur(18px);
+}
+
+/* LIGHT MODE OVERRIDES */
+body.light .lux-modal-backdrop {
+  background: rgba(10,12,16,.20) !important;
+}
+
+body.light .lux-modal {
+  background: rgba(255,255,255,.94) !important;
+  border: 1px solid rgba(108,140,108,.22) !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,.12) !important;
+}
+
+body.light .lux-modal * {
+  color: rgba(47,62,47,.92) !important;
+}
+
+body.light .lux-modal input {
+  background: rgba(255,255,255,.82) !important;
+  border: 1px solid rgba(108,140,108,.24) !important;
+}
 
 /* =========================
    DARK MODE (kept minimal)
